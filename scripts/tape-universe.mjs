@@ -121,7 +121,12 @@ async function resolveRow(row) {
     const c = (await fetchCandidates({ filter: `CERT:${row.cert}` })).find(
       (x) => String(x.CERT) === String(row.cert)
     );
-    if (!c) return { status: "override-bad", note: `cert ${row.cert} not found or inactive` };
+    if (!c) return {
+      status: "override-bad",
+      note: `cert ${row.cert} not found or inactive. A cert that was valid ` +
+            `before and is inactive now usually means the charter was merged ` +
+            `away: check whether the ticker still trades before re-resolving.`
+    };
     return { status: "override", hit: c };
   }
 
