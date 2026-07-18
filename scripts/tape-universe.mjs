@@ -10,6 +10,11 @@
  * contains "Bank"), the largest institution won regardless of whether the
  * name matched at all.
  *
+ * The join FDIC actually publishes is bank -> holding company (NAMEHCR /
+ * RSSDHCR), so the seed's holdco name is queried and verified alongside
+ * the lead-bank name. Holdco names are distinctive where bank names are
+ * generic ("United Bankshares" is unique; "United Bank" matches ten).
+ *
  * The rule now: relevance fetches candidates, LOCAL VERIFICATION decides.
  * A candidate is accepted only if its normalized name actually matches the
  * seed's. Nothing is ever accepted on size alone. Failure prints the
@@ -27,7 +32,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 const FDIC = "https://banks.data.fdic.gov/api/institutions";
-const FIELDS = "CERT,NAME,ASSET,FED_RSSD,CITY,STALP,ACTIVE";
+const FIELDS = "CERT,NAME,ASSET,FED_RSSD,CITY,STALP,ACTIVE,NAMEHCR,RSSDHCR";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---- SECTION 1: name normalization + verification --------------------- */
@@ -63,12 +68,13 @@ function verify(seedName, candidateName) {
  * candidates that already passed verification.
  * ---------------------------------------------------------------------- */
 
-async function fetchCandidates(term) {
+async function fetchCandidates(attempt) {
   const qs = new URLSearchParams({
-    search: term,
-    filters: "ACTIVE:1",
     fields: FIELDS,
-    limit: "10"
+    limit: "10",
+    ...(attempt.search
+      ? { search: attempt.search, filters: "ACTIVE:1" }
+      : { filters: `ACTIVE:1 AND ${attempt.filter}` })
   });
   const res = await fetch(`${FDIC}?${qs}`);
   if (!res.ok) throw new Error(`FDIC HTTP ${res.status}`);
@@ -79,18 +85,29 @@ async function fetchCandidates(term) {
 async function candidatesFor(row) {
   const pool = new Map();
   const tried = [];
-  const terms = [`NAME:"${row.search.replace(/"/g, "")}"`, core(row.search)];
-  for (const t of terms) {
-    if (!t) continue;
-    tried.push(t);
+  const clean = (v) => String(v).replace(/"/g, "");
+  const attempts = [
+    { search: `NAME:"${clean(row.search)}"` },
+    { search: core(row.search) },
+    { filter: `NAME:"${clean(row.search)}"` },
+    row.name ? { filter: `NAMEHCR:"${clean(row.name)}"` } : null,
+    /* FDIC stores formal holdco names ("COMERICA INCORPORATED"); the seed
+       says "Comerica Inc.". If the exact phrase misses, retry on the
+       distinctive core tokens. */
+    row.name && core(row.name) && core(row.name) !== clean(row.name).toLowerCase()
+      ? { filter: `NAMEHCR:"${core(row.name)}"` } : null
+  ];
+  for (const a of attempts) {
+    if (!a) continue;
+    const label = a.search ? `search ${a.search}` : `filter ${a.filter}`;
+    tried.push(label);
     try {
-      for (const c of await fetchCandidates(t)) {
+      for (const c of await fetchCandidates(a)) {
         if (c && c.CERT) pool.set(String(c.CERT), c);
       }
     } catch (e) {
-      console.log(`    query failed (${t}): ${e.message}`);
+      console.log(`    query failed (${label}): ${e.message}`);
     }
-    if (pool.size >= 10) break;
     await sleep(200);
   }
   return Object.assign([...pool.values()], { tried });
@@ -101,7 +118,7 @@ async function candidatesFor(row) {
 async function resolveRow(row) {
   /* Manual override: verify it exists and is active, never trust blindly. */
   if (row.cert) {
-    const c = (await fetchCandidates(`CERT:${row.cert}`)).find(
+    const c = (await fetchCandidates({ filter: `CERT:${row.cert}` })).find(
       (x) => String(x.CERT) === String(row.cert)
     );
     if (!c) return { status: "override-bad", note: `cert ${row.cert} not found or inactive` };
@@ -111,7 +128,10 @@ async function resolveRow(row) {
   const cands = await candidatesFor(row);
   if (!cands.length) return { status: "none", cands, tried: cands.tried };
 
-  let passing = cands.filter((c) => verify(row.search, c.NAME));
+  let passing = cands.filter((c) =>
+    verify(row.search, c.NAME) ||
+    (row.name && c.NAMEHCR && verify(row.name, c.NAMEHCR))
+  );
   if (row.st) {
     /* Hard constraint, never a soft preference. Falling back to other
        states is how "United Bank" (WV) became United Fidelity (IN). */
@@ -160,7 +180,8 @@ async function main() {
                   r.status === "ambiguous" ? "  [AMBIGUOUS, verify]" : "";
       console.log(
         `${s.ticker.padEnd(7)} ${String(h.CERT).padEnd(8)} ${String(h.FED_RSSD || "").padEnd(9)} ` +
-        `${h.NAME} (${h.CITY}, ${h.STALP})${tag}`
+        `${h.NAME} (${h.CITY}, ${h.STALP})` +
+        (h.NAMEHCR ? ` · holdco: ${h.NAMEHCR}` : "") + tag
       );
       if (r.status === "ambiguous") {
         problems.push(`${s.ticker}: ${r.alts.length + 1} names matched, largest chosen`);
