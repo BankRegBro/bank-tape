@@ -180,6 +180,8 @@ tbody tr.straddle:hover td{background:var(--oxblood-soft)}
 }
 .badge.enf{background:var(--oxblood);color:var(--paper-2)}
 .badge.strad{background:var(--paper);border:1px solid var(--oxblood);color:var(--oxblood)}
+.badge.mc{background:var(--paper);border:1px solid var(--rule-strong);color:var(--ink-soft)}
+tr.muted td:not(:nth-child(1)):not(:nth-child(2)):not(:nth-child(3)):not(:nth-child(4)){opacity:.45}
 .stamp{font-size:11.5px;color:var(--ink-soft)}
 .stamp.aging{color:var(--copper)}
 .stamp.stale{color:var(--oxblood)}
@@ -292,7 +294,7 @@ footer{border-top:1px solid var(--rule);margin-top:34px;padding-top:12px;font-fa
   <section class="method">
     <h2>How these numbers are made</h2>
     <p>Figures are bank-level from the FFIEC call report of the stated period; the traded entity is the holding company, so for institutions with large nonbank operations the ratios run rich. Tangible book is total equity less goodwill and other intangibles. Adjusted tangible book further deducts the pre-tax unrealized loss on held-to-maturity securities (amortized cost less fair value, Schedule RC-B), the mark the balance sheet is allowed to omit.</p>
-    <p>Deposit premium is <code>(market cap − TBV) / core deposits</code>, the classic acquirer's yardstick. The warranted multiple is <code>(ROTE − g) / (COE − g)</code> with the assumptions shown above the table; "vs warranted" is the actual multiple minus that figure, the market's verdict in one number. "Vs peers" is the residual from a cross-sectional fit of the multiple on ROTE, uninsured deposit share, and size across this universe: cheap or rich given the profile, refit on every load. The detail rows carry a modeled between-quarters book value built from the earnings run-rate net of dividends only; it is labeled as a model and excludes rate drift. Prices are prior-close; call report data ages between quarters and each row says exactly how much.</p>
+    <p>Deposit premium is <code>(market cap − TBV) / core deposits</code>, the classic acquirer's yardstick. The warranted multiple is <code>(ROTE − g) / (COE − g)</code> with the assumptions shown above the table; "vs warranted" is the actual multiple minus that figure, the market's verdict in one number. "Vs peers" is the residual from a cross-sectional fit of the multiple on ROTE, uninsured deposit share, and size across this universe: cheap or rich given the profile, refit on every load. The detail rows carry a modeled between-quarters book value built from the earnings run-rate net of dividends only; it is labeled as a model and excludes rate drift. Banks marked multi-charter belong to a holding company that runs several bank charters; their book-value columns are withheld rather than estimated, since one charter's call report cannot be compared to the whole company's market value. Prices are prior-close; call report data ages between quarters and each row says exactly how much.</p>
   </section>
 
   <footer>Prices: prior close via market data API · Fundamentals: FFIEC CDR via the BankRegWire call report pipeline · Not investment advice</footer>
@@ -415,6 +417,16 @@ function visibleRows() {
 }
 
 function detailRow(r) {
+  if (r.flags && r.flags.multiCharter) {
+    return '<tr class="detail"><td colspan="11">' +
+      '<p style="margin:0 0 8px;max-width:70ch">This holding company operates several separately chartered banks. ' +
+      'Market capitalization covers all of them while a call report covers one, so book-value multiples ' +
+      'would overstate the bank by a wide margin. Price and market capitalization are shown; every ' +
+      'book-derived figure is withheld until the charters are consolidated.</p>' +
+      '<div class="dlinks"><a href="/callreport/literal-form.html#cert=' + r.cert + '">Literal Form (lead charter)</a>' +
+      '<a href="https://banks.data.fdic.gov/bankfind-suite/bankfind?cert=' + r.cert + '" target="_blank" rel="noopener">FDIC BankFind</a></div>' +
+      '</td></tr>';
+  }
   var m = STATE.model || { coe: 0.105, g: 0.03 };
   var warrantedLine = r.warranted === null ? "·" :
     "ROTE " + fmtPct(r.rote) + " · COE " + fmtPct(m.coe) + " · g " + fmtPct(m.g, 0) +
@@ -461,10 +473,12 @@ function render() {
   rows.forEach(function (r) {
     var enf = STATE.enf && STATE.enf[r.cert];
     html += '<tr class="bankrow' + (r.flags && r.flags.straddler ? " straddle" : "") +
+      (r.flags && r.flags.multiCharter ? " muted" : "") +
       '" data-cert="' + r.cert + '" tabindex="0" aria-expanded="' + (STATE.open[r.cert] ? "true" : "false") + '">' +
       '<td class="l"><span class="bankname">' + esc(r.name) + '</span>' +
       (enf ? '<span class="badge enf">ENF</span>' : "") +
       (r.flags && r.flags.straddler ? '<span class="badge strad">below adj. book</span>' : "") +
+      (r.flags && r.flags.multiCharter ? '<span class="badge mc">multi-charter</span>' : "") +
       '<br><span class="bankmeta">' + esc(r.ticker) + " · cert " + r.cert + "</span></td>" +
       "<td>" + (r.price === null ? "·" : "$" + r.price.toFixed(2)) + "</td>" +
       '<td class="' + (r.changePct > 0 ? "pos" : r.changePct < 0 ? "neg" : "") + '">' +
