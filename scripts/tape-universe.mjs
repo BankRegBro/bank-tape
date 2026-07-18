@@ -179,7 +179,12 @@ async function main() {
         cert: Number(h.CERT),
         rssd: h.FED_RSSD ? Number(h.FED_RSSD) : null,
         name: s.name,
-        bank: h.NAME
+        bank: h.NAME,
+        /* Holdcos running several charters: bank-level call report data
+           covers one charter while market cap covers all of them, so every
+           book-value ratio would be wrong. Carried through to the worker,
+           which suppresses those columns rather than printing a bad number. */
+        ...(s.multiCharter ? { multiCharter: true } : {})
       });
       const tag = r.status === "override" ? "  [manual override]" :
                   r.status === "ambiguous" ? "  [AMBIGUOUS, verify]" : "";
@@ -189,7 +194,9 @@ async function main() {
         (h.NAMEHCR ? ` · holdco: ${h.NAMEHCR}` : "") + tag
       );
       if (r.status === "ambiguous") {
-        problems.push(`${s.ticker}: ${r.alts.length + 1} names matched, largest chosen`);
+        problems.push(s.multiCharter
+          ? `${s.ticker}: ${r.alts.length + 1} charters under one holdco (expected; ratios suppressed)`
+          : `${s.ticker}: ${r.alts.length + 1} names matched, largest chosen`);
         r.alts.forEach((a) => console.log(`          also matched: ${a.NAME} (${a.CITY}, ${a.STALP}) cert ${a.CERT}`));
       }
     } else {
