@@ -1,42 +1,242 @@
 [
-  {"ticker":"JPM","name":"JPMorgan Chase & Co.","search":"JPMorgan Chase Bank","st":"OH"},
-  {"ticker":"BAC","name":"Bank of America Corp.","search":"Bank of America","st":"NC"},
-  {"ticker":"WFC","name":"Wells Fargo & Co.","search":"Wells Fargo Bank","st":"SD"},
-  {"ticker":"C","name":"Citigroup Inc.","search":"Citibank","st":"SD"},
-  {"ticker":"USB","name":"U.S. Bancorp","search":"U.S. Bank National Association","st":"OH"},
-  {"ticker":"PNC","name":"PNC Financial Services","search":"PNC Bank","st":"DE"},
-  {"ticker":"TFC","name":"Truist Financial Corp.","search":"Truist Bank","st":"NC"},
-  {"ticker":"COF","name":"Capital One Financial","search":"Capital One","st":"VA"},
-  {"ticker":"FITB","name":"Fifth Third Bancorp","search":"Fifth Third Bank","st":"OH"},
-  {"ticker":"MTB","name":"M&T Bank Corp.","search":"Manufacturers and Traders Trust","st":"NY"},
-  {"ticker":"HBAN","name":"Huntington Bancshares","search":"Huntington National Bank","st":"OH"},
-  {"ticker":"RF","name":"Regions Financial Corp.","search":"Regions Bank","st":"AL"},
-  {"ticker":"KEY","name":"KeyCorp","search":"KeyBank","st":"OH"},
-  {"ticker":"CFG","name":"Citizens Financial Group","search":"Citizens Bank","st":"RI"},
-  {"ticker":"ZION","name":"Zions Bancorporation","search":"Zions Bancorporation","st":"UT"},
-  {"ticker":"CMA","name":"Comerica Inc.","search":"Comerica","st":"TX"},
-  {"ticker":"WAL","name":"Western Alliance Bancorporation","search":"Western Alliance Bank","st":"AZ"},
-  {"ticker":"EWBC","name":"East West Bancorp","search":"East West Bank","st":"CA"},
-  {"ticker":"SNV","name":"Synovus Financial Corp.","search":"Synovus","st":"GA"},
-  {"ticker":"FHN","name":"First Horizon Corp.","search":"First Horizon Bank","st":"TN"},
-  {"ticker":"WBS","name":"Webster Financial Corp.","search":"Webster Bank","st":"CT"},
-  {"ticker":"VLY","name":"Valley National Bancorp","search":"Valley National Bank","st":"NJ"},
-  {"ticker":"BOKF","name":"BOK Financial Corp.","search":"BOKF","st":"OK"},
-  {"ticker":"CBSH","name":"Commerce Bancshares","search":"Commerce Bank","st":"MO"},
-  {"ticker":"PB","name":"Prosperity Bancshares","search":"Prosperity Bank","st":"TX"},
-  {"ticker":"CFR","name":"Cullen/Frost Bankers","search":"Frost Bank","st":"TX"},
-  {"ticker":"SSB","name":"SouthState Corp.","search":"SouthState Bank","st":"FL"},
-  {"ticker":"PNFP","name":"Pinnacle Financial Partners","search":"Pinnacle Bank","st":"TN"},
-  {"ticker":"WTFC","name":"Wintrust Financial Corp.","search":"Wintrust Bank","st":"IL"},
-  {"ticker":"GBCI","name":"Glacier Bancorp","search":"Glacier Bank","st":"MT"},
-  {"ticker":"UMBF","name":"UMB Financial Corp.","search":"UMB Bank","st":"MO"},
-  {"ticker":"ONB","name":"Old National Bancorp","search":"Old National Bank","st":"IN"},
-  {"ticker":"FNB","name":"F.N.B. Corp.","search":"First National Bank of Pennsylvania","st":"PA"},
-  {"ticker":"HOMB","name":"Home BancShares","search":"Centennial Bank","st":"AR"},
-  {"ticker":"ASB","name":"Associated Banc-Corp","search":"Associated Bank","st":"WI"},
-  {"ticker":"CADE","name":"Cadence Bank","search":"Cadence"},
-  {"ticker":"BPOP","name":"Popular Inc.","search":"Banco Popular de Puerto Rico","st":"PR"},
-  {"ticker":"COLB","name":"Columbia Banking System","search":"Columbia Bank","st":"OR"},
-  {"ticker":"FULT","name":"Fulton Financial Corp.","search":"Fulton Bank","st":"PA"},
-  {"ticker":"UBSI","name":"United Bankshares","search":"United Bank","st":"WV"}
+  {
+    "ticker": "JPM",
+    "name": "JPMorgan Chase & Co.",
+    "search": "JPMorgan Chase Bank",
+    "st": "OH"
+  },
+  {
+    "ticker": "BAC",
+    "name": "Bank of America Corp.",
+    "search": "Bank of America",
+    "st": "NC"
+  },
+  {
+    "ticker": "WFC",
+    "name": "Wells Fargo & Co.",
+    "search": "Wells Fargo Bank",
+    "st": "SD"
+  },
+  {
+    "ticker": "C",
+    "name": "Citigroup Inc.",
+    "search": "Citibank",
+    "st": "SD"
+  },
+  {
+    "ticker": "USB",
+    "name": "U.S. Bancorp",
+    "search": "U.S. Bank National Association",
+    "st": "OH"
+  },
+  {
+    "ticker": "PNC",
+    "name": "PNC Financial Services",
+    "search": "PNC Bank",
+    "st": "DE"
+  },
+  {
+    "ticker": "TFC",
+    "name": "Truist Financial Corp.",
+    "search": "Truist Bank",
+    "st": "NC"
+  },
+  {
+    "ticker": "COF",
+    "name": "Capital One Financial",
+    "search": "Capital One",
+    "st": "VA"
+  },
+  {
+    "ticker": "FITB",
+    "name": "Fifth Third Bancorp",
+    "search": "Fifth Third Bank",
+    "st": "OH"
+  },
+  {
+    "ticker": "MTB",
+    "name": "M&T Bank Corp.",
+    "search": "Manufacturers and Traders Trust",
+    "st": "NY"
+  },
+  {
+    "ticker": "HBAN",
+    "name": "Huntington Bancshares",
+    "search": "Huntington National Bank",
+    "st": "OH"
+  },
+  {
+    "ticker": "RF",
+    "name": "Regions Financial Corp.",
+    "search": "Regions Bank",
+    "st": "AL"
+  },
+  {
+    "ticker": "KEY",
+    "name": "KeyCorp",
+    "search": "KeyBank",
+    "st": "OH"
+  },
+  {
+    "ticker": "CFG",
+    "name": "Citizens Financial Group",
+    "search": "Citizens Bank",
+    "st": "RI"
+  },
+  {
+    "ticker": "ZION",
+    "name": "Zions Bancorporation",
+    "search": "Zions Bancorporation",
+    "st": "UT"
+  },
+  {
+    "ticker": "CMA",
+    "name": "Comerica Inc.",
+    "search": "Comerica",
+    "cert": 983
+  },
+  {
+    "ticker": "WAL",
+    "name": "Western Alliance Bancorporation",
+    "search": "Western Alliance Bank",
+    "st": "AZ"
+  },
+  {
+    "ticker": "EWBC",
+    "name": "East West Bancorp",
+    "search": "East West Bank",
+    "st": "CA"
+  },
+  {
+    "ticker": "SNV",
+    "name": "Synovus Financial Corp.",
+    "search": "Synovus",
+    "cert": 873
+  },
+  {
+    "ticker": "FHN",
+    "name": "First Horizon Corp.",
+    "search": "First Horizon Bank",
+    "st": "TN"
+  },
+  {
+    "ticker": "WBS",
+    "name": "Webster Financial Corp.",
+    "search": "Webster Bank",
+    "st": "CT"
+  },
+  {
+    "ticker": "VLY",
+    "name": "Valley National Bancorp",
+    "search": "Valley National Bank",
+    "st": "NJ"
+  },
+  {
+    "ticker": "BOKF",
+    "name": "BOK Financial Corp.",
+    "search": "BOKF",
+    "st": "OK"
+  },
+  {
+    "ticker": "CBSH",
+    "name": "Commerce Bancshares",
+    "search": "Commerce Bank",
+    "st": "MO"
+  },
+  {
+    "ticker": "PB",
+    "name": "Prosperity Bancshares",
+    "search": "Prosperity Bank",
+    "st": "TX"
+  },
+  {
+    "ticker": "CFR",
+    "name": "Cullen/Frost Bankers",
+    "search": "Frost Bank",
+    "st": "TX"
+  },
+  {
+    "ticker": "SSB",
+    "name": "SouthState Corp.",
+    "search": "SouthState Bank",
+    "st": "FL"
+  },
+  {
+    "ticker": "PNFP",
+    "name": "Pinnacle Financial Partners",
+    "search": "Pinnacle Bank",
+    "st": "TN"
+  },
+  {
+    "ticker": "WTFC",
+    "name": "Wintrust Financial Corp.",
+    "search": "Wintrust Bank",
+    "st": "IL"
+  },
+  {
+    "ticker": "GBCI",
+    "name": "Glacier Bancorp",
+    "search": "Glacier Bank",
+    "st": "MT"
+  },
+  {
+    "ticker": "UMBF",
+    "name": "UMB Financial Corp.",
+    "search": "UMB Bank",
+    "st": "MO"
+  },
+  {
+    "ticker": "ONB",
+    "name": "Old National Bancorp",
+    "search": "Old National Bank",
+    "st": "IN"
+  },
+  {
+    "ticker": "FNB",
+    "name": "F.N.B. Corp.",
+    "search": "First National Bank of Pennsylvania",
+    "st": "PA"
+  },
+  {
+    "ticker": "HOMB",
+    "name": "Home BancShares",
+    "search": "Centennial Bank",
+    "st": "AR"
+  },
+  {
+    "ticker": "ASB",
+    "name": "Associated Banc-Corp",
+    "search": "Associated Bank",
+    "st": "WI"
+  },
+  {
+    "ticker": "CADE",
+    "name": "Cadence Bank",
+    "search": "Cadence",
+    "cert": 11813
+  },
+  {
+    "ticker": "BPOP",
+    "name": "Popular Inc.",
+    "search": "Banco Popular de Puerto Rico",
+    "st": "PR"
+  },
+  {
+    "ticker": "COLB",
+    "name": "Columbia Banking System",
+    "search": "Columbia Bank",
+    "st": "OR"
+  },
+  {
+    "ticker": "FULT",
+    "name": "Fulton Financial Corp.",
+    "search": "Fulton Bank",
+    "st": "PA"
+  },
+  {
+    "ticker": "UBSI",
+    "name": "United Bankshares",
+    "search": "United Bank",
+    "cert": 22858
+  }
 ]
