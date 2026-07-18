@@ -159,7 +159,8 @@
     "ticker": "WTFC",
     "name": "Wintrust Financial Corp.",
     "search": "Wintrust Bank",
-    "st": "IL"
+    "st": "IL",
+    "multiCharter": true
   },
   {
     "ticker": "GBCI",
