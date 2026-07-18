@@ -18,7 +18,9 @@
  * Seed row fields:
  *   ticker, name           required
  *   search                 lead bank name to match against
- *   st                     optional 2-letter state, disambiguates common names
+ *   st                     optional 2-letter state. HARD constraint: if no
+ *                          candidate sits in that state the row is left
+ *                          unresolved rather than matched elsewhere
  *   cert                   optional manual override; verified, not resolved
  * ========================================================================= */
 
@@ -76,9 +78,11 @@ async function fetchCandidates(term) {
 
 async function candidatesFor(row) {
   const pool = new Map();
+  const tried = [];
   const terms = [`NAME:"${row.search.replace(/"/g, "")}"`, core(row.search)];
   for (const t of terms) {
     if (!t) continue;
+    tried.push(t);
     try {
       for (const c of await fetchCandidates(t)) {
         if (c && c.CERT) pool.set(String(c.CERT), c);
@@ -89,7 +93,7 @@ async function candidatesFor(row) {
     if (pool.size >= 10) break;
     await sleep(200);
   }
-  return [...pool.values()];
+  return Object.assign([...pool.values()], { tried });
 }
 
 /* ---- SECTION 3: resolution -------------------------------------------- */
@@ -105,14 +109,15 @@ async function resolveRow(row) {
   }
 
   const cands = await candidatesFor(row);
-  if (!cands.length) return { status: "none", cands };
+  if (!cands.length) return { status: "none", cands, tried: cands.tried };
 
   let passing = cands.filter((c) => verify(row.search, c.NAME));
   if (row.st) {
-    const inState = passing.filter((c) => c.STALP === row.st);
-    if (inState.length) passing = inState;
+    /* Hard constraint, never a soft preference. Falling back to other
+       states is how "United Bank" (WV) became United Fidelity (IN). */
+    passing = passing.filter((c) => c.STALP === row.st);
   }
-  if (!passing.length) return { status: "none", cands };
+  if (!passing.length) return { status: "none", cands, tried: cands.tried };
 
   passing.sort((a, b) => Number(b.ASSET || 0) - Number(a.ASSET || 0));
   return {
@@ -164,9 +169,13 @@ async function main() {
     } else {
       out.push({ ticker: s.ticker, cert: null, rssd: null, name: s.name, bank: null });
       console.log(`${s.ticker.padEnd(7)} UNRESOLVED  (search: "${s.search}")${r.note ? " " + r.note : ""}`);
-      (r.cands || []).slice(0, 5).forEach((c) =>
+      (r.cands || []).slice(0, 6).forEach((c) =>
         console.log(`          candidate seen: ${c.NAME} (${c.CITY}, ${c.STALP}) cert ${c.CERT}`)
       );
+      if (!(r.cands || []).length && r.tried) {
+        console.log(`          zero candidates. Queries tried: ${r.tried.map((t) => JSON.stringify(t)).join(", ")}`);
+        console.log(`          check by hand: ${FDIC}?search=${encodeURIComponent(r.tried[0])}&filters=ACTIVE:1&fields=${FIELDS}&limit=5`);
+      }
       problems.push(`${s.ticker}: unresolved, add "cert" or fix "search" in the seed`);
     }
     await sleep(250);
