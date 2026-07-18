@@ -100,7 +100,7 @@ async function candidatesFor(row) {
   for (const a of attempts) {
     if (!a) continue;
     const label = a.search ? `search ${a.search}` : `filter ${a.filter}`;
-    tried.push(label);
+    tried.push({ label, attempt: a });
     try {
       for (const c of await fetchCandidates(a)) {
         if (c && c.CERT) pool.set(String(c.CERT), c);
@@ -194,8 +194,17 @@ async function main() {
         console.log(`          candidate seen: ${c.NAME} (${c.CITY}, ${c.STALP}) cert ${c.CERT}`)
       );
       if (!(r.cands || []).length && r.tried) {
-        console.log(`          zero candidates. Queries tried: ${r.tried.map((t) => JSON.stringify(t)).join(", ")}`);
-        console.log(`          check by hand: ${FDIC}?search=${encodeURIComponent(r.tried[0])}&filters=ACTIVE:1&fields=${FIELDS}&limit=5`);
+        console.log(`          zero candidates. Queries tried: ${r.tried.map((t) => t.label).join(" | ")}`);
+        r.tried.forEach((t) => {
+          const qs = new URLSearchParams({
+            fields: "CERT,NAME,CITY,STALP,NAMEHCR",
+            limit: "5",
+            ...(t.attempt.search
+              ? { search: t.attempt.search, filters: "ACTIVE:1" }
+              : { filters: `ACTIVE:1 AND ${t.attempt.filter}` })
+          });
+          console.log(`          try in a browser: ${FDIC}?${qs}`);
+        });
       }
       problems.push(`${s.ticker}: unresolved, add "cert" or fix "search" in the seed`);
     }
