@@ -90,12 +90,6 @@
     "st": "UT"
   },
   {
-    "ticker": "CMA",
-    "name": "Comerica Inc.",
-    "search": "Comerica",
-    "cert": 983
-  },
-  {
     "ticker": "WAL",
     "name": "Western Alliance Bancorporation",
     "search": "Western Alliance Bank",
@@ -106,12 +100,6 @@
     "name": "East West Bancorp",
     "search": "East West Bank",
     "st": "CA"
-  },
-  {
-    "ticker": "SNV",
-    "name": "Synovus Financial Corp.",
-    "search": "Synovus",
-    "cert": 873
   },
   {
     "ticker": "FHN",
@@ -208,12 +196,6 @@
     "name": "Associated Banc-Corp",
     "search": "Associated Bank",
     "st": "WI"
-  },
-  {
-    "ticker": "CADE",
-    "name": "Cadence Bank",
-    "search": "Cadence",
-    "cert": 11813
   },
   {
     "ticker": "BPOP",
