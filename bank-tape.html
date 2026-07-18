@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Bank Tape — BankRegWire</title>
+<meta name="description" content="Bank equities priced against the call report: stated and rate-adjusted tangible book, deposit premiums, and warranted multiples for the public bank universe.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ====================================================================
+   SECTION 1: TOKENS (BankRegWire warm-paper system)
+   ==================================================================== */
+:root{
+  --paper:#f4ecd9;
+  --paper-2:#faf5e9;
+  --paper-3:#efe4cc;
+  --ink:#241f1b;
+  --ink-soft:#5b5147;
+  --rule:#d8ccae;
+  --rule-strong:#c3b491;
+  --oxblood:#7a1e29;
+  --oxblood-soft:#f2dcdb;
+  --copper:#a5652a;
+  --copper-soft:#f0e2cd;
+  --verdigris:#2f6b53;
+  --verdigris-soft:#dcecdf;
+  --shadow:rgba(60,44,20,.10);
+  --display:"Fraunces",Georgia,serif;
+  --body:"Archivo",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+[data-theme="dark"]{
+  --paper:#221c14;
+  --paper-2:#2a2318;
+  --paper-3:#1c1710;
+  --ink:#efe6d2;
+  --ink-soft:#b3a68c;
+  --rule:#463c2a;
+  --rule-strong:#5d5138;
+  --oxblood:#d4737f;
+  --oxblood-soft:#3d2226;
+  --copper:#d59a5c;
+  --copper-soft:#3b2e1d;
+  --verdigris:#7fbca0;
+  --verdigris-soft:#22352b;
+  --shadow:rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--body);font-size:16px;line-height:1.55;
+  background-image:radial-gradient(var(--rule) .5px,transparent .5px);
+  background-size:22px 22px;background-position:-11px -11px;
+}
+a{color:var(--oxblood);text-decoration-thickness:1px;text-underline-offset:2px}
+a:hover{color:var(--copper)}
+:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+
+/* ====================================================================
+   SECTION 2: MASTHEAD
+   ==================================================================== */
+header.masthead{
+  border-bottom:2px solid var(--ink);background:var(--paper-2);
+  padding:18px 22px 14px;
+  box-shadow:0 1px 0 var(--rule),0 6px 14px -12px var(--shadow);
+}
+.brandrow{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;max-width:1240px;margin:0 auto}
+.wordmark{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.14em;text-transform:uppercase}
+.wordmark a{color:var(--ink);text-decoration:none}
+.themebtn{
+  margin-left:auto;
+  font-family:var(--mono);font-size:12px;background:none;color:var(--ink-soft);
+  border:1px solid var(--rule-strong);border-radius:4px;padding:3px 9px;cursor:pointer;
+}
+.themebtn:hover{color:var(--ink);border-color:var(--ink)}
+.titleblock{max-width:1240px;margin:14px auto 0}
+h1{
+  font-family:var(--display);font-weight:500;font-size:clamp(30px,4.5vw,44px);
+  line-height:1.08;margin:0;
+}
+.deck{color:var(--ink-soft);max-width:64ch;margin:8px 0 0;font-size:15.5px}
+.pulseline{
+  font-family:var(--mono);font-size:12.5px;color:var(--copper);
+  margin:12px 0 0;letter-spacing:.02em;
+}
+
+/* ====================================================================
+   SECTION 2b: HERO, the universe on one line
+   ==================================================================== */
+.hero{
+  background:var(--paper-2);border:1px solid var(--rule-strong);border-radius:8px;
+  box-shadow:0 8px 22px -16px var(--shadow);
+  padding:10px 14px 6px;margin:4px 0 18px;
+}
+.hero svg{display:block;width:100%;height:auto}
+.hero .track{stroke:var(--rule);stroke-width:1}
+.hero .bookline{stroke:var(--ink-soft);stroke-width:1.2}
+.hero .bar{stroke:var(--rule-strong);stroke-width:1.5;opacity:.75}
+.hero .bar.crossing{stroke:var(--oxblood);opacity:1}
+.hero .stated{fill:var(--copper);cursor:pointer}
+.hero .adjusted{fill:var(--oxblood);cursor:pointer}
+.hero text{font-family:var(--mono);font-size:10px;fill:var(--ink-soft)}
+.hero text.booklabel{fill:var(--ink)}
+.hero .medtick{stroke:var(--copper);stroke-width:2}
+.herocaption{font-size:12px;color:var(--ink-soft);margin:4px 2px 2px}
+
+/* ====================================================================
+   SECTION 3: PROXY TAPE + CONTROLS
+   ==================================================================== */
+main{max-width:1240px;margin:0 auto;padding:18px 22px 60px}
+.proxystrip{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin:6px 0 18px}
+.proxycard{
+  background:var(--paper-2);border:1px solid var(--rule-strong);border-radius:6px;
+  padding:9px 14px;min-width:132px;box-shadow:0 2px 6px -4px var(--shadow);
+}
+.proxycard .sym{font-family:var(--mono);font-size:12px;color:var(--ink-soft);letter-spacing:.06em}
+.proxycard .px{font-family:var(--mono);font-size:19px;font-weight:700;margin-top:2px}
+.proxycard .chg{font-family:var(--mono);font-size:12.5px;margin-top:1px}
+.chg.up{color:var(--verdigris)}
+.chg.down{color:var(--oxblood)}
+.proxynote{align-self:center;font-size:12.5px;color:var(--ink-soft);max-width:26ch}
+
+.controls{
+  display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
+  padding:12px 0;margin:0 0 16px;
+}
+.controls input[type="search"]{
+  font-family:var(--body);font-size:14px;color:var(--ink);
+  background:var(--paper-2);border:1px solid var(--rule-strong);border-radius:5px;
+  padding:6px 10px;width:200px;
+}
+.chip{
+  font-family:var(--mono);font-size:12px;letter-spacing:.02em;cursor:pointer;
+  background:var(--paper-2);color:var(--ink-soft);
+  border:1px solid var(--rule-strong);border-radius:99px;padding:5px 12px;
+}
+.chip[aria-pressed="true"]{background:var(--oxblood);border-color:var(--oxblood);color:var(--paper-2)}
+.chip.size[aria-pressed="true"]{background:var(--copper);border-color:var(--copper)}
+.modelnote{font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);margin-left:auto}
+
+/* ====================================================================
+   SECTION 4: THE TABLE
+   ==================================================================== */
+.panel{
+  background:var(--paper-2);border:1px solid var(--rule-strong);border-radius:8px;
+  box-shadow:0 8px 22px -16px var(--shadow);overflow-x:auto;
+}
+table{border-collapse:collapse;width:100%;min-width:1060px}
+thead th{
+  font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-soft);text-align:right;
+  border-bottom:2px solid var(--ink);padding:11px 12px 9px;white-space:nowrap;
+  cursor:pointer;user-select:none;position:sticky;top:0;background:var(--paper-2);
+}
+thead th.l{text-align:left}
+thead th[aria-sort] .arrow{color:var(--copper)}
+tbody td{
+  font-family:var(--mono);font-size:13.5px;text-align:right;
+  padding:9px 12px;border-bottom:1px solid var(--rule);white-space:nowrap;
+}
+tbody td.l{text-align:left}
+tbody tr.bankrow{cursor:pointer}
+tbody tr.bankrow:hover td{background:var(--paper-3)}
+tbody tr.straddle td{background:var(--oxblood-soft)}
+tbody tr.straddle:hover td{background:var(--oxblood-soft)}
+.bankname{font-family:var(--body);font-weight:600;font-size:14.5px}
+.bankmeta{font-size:11.5px;color:var(--ink-soft)}
+.neg{color:var(--oxblood)}
+.pos{color:var(--verdigris)}
+.badge{
+  display:inline-block;font-size:10px;letter-spacing:.05em;text-transform:uppercase;
+  border-radius:3px;padding:1px 6px;margin-left:6px;vertical-align:1px;
+}
+.badge.enf{background:var(--oxblood);color:var(--paper-2)}
+.badge.strad{background:var(--paper);border:1px solid var(--oxblood);color:var(--oxblood)}
+.stamp{font-size:11.5px;color:var(--ink-soft)}
+.stamp.aging{color:var(--copper)}
+.stamp.stale{color:var(--oxblood)}
+
+/* SIGNATURE ELEMENT: the gap dumbbell. Every cell shares one fixed
+   0.25x-2.50x domain, so the 1.0x book tick forms a single hairline
+   running down the whole column. */
+td.dumbbell{padding-top:6px;padding-bottom:6px}
+.db{display:block}
+.db .track{stroke:var(--rule);stroke-width:1}
+.db .bookline{stroke:var(--ink-soft);stroke-width:1;stroke-dasharray:2 2}
+.db .bar{stroke:var(--rule-strong);stroke-width:2}
+.db .bar.crossing{stroke:var(--oxblood)}
+.db .stated{fill:var(--copper)}
+.db .adjusted{fill:var(--oxblood)}
+th .dblegend{display:inline-flex;gap:8px;align-items:center;text-transform:none;letter-spacing:0;margin-left:8px}
+th .dblegend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+th .dblegend .lc{background:var(--copper)}
+th .dblegend .lo{background:var(--oxblood)}
+
+/* detail rows */
+tr.detail td{
+  background:var(--paper-3);font-family:var(--body);font-size:13.5px;
+  text-align:left;padding:14px 18px;white-space:normal;
+}
+.detailgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:14px;max-width:1100px}
+.dcell b{font-family:var(--mono);font-size:15px;font-weight:700;display:block}
+.dcell span{font-size:12px;color:var(--ink-soft)}
+.dlinks{margin-top:12px;font-size:13px}
+.dlinks a{margin-right:16px}
+
+.emptystate{padding:44px 22px;text-align:center;color:var(--ink-soft);font-size:15px}
+
+/* ====================================================================
+   SECTION 5: METHOD NOTES
+   ==================================================================== */
+.method{margin-top:26px;font-size:13.5px;color:var(--ink-soft);max-width:78ch}
+.method h2{font-family:var(--display);font-weight:500;font-size:19px;color:var(--ink);margin:0 0 6px}
+.method p{margin:0 0 10px}
+.method code{font-family:var(--mono);font-size:12px;background:var(--paper-3);padding:1px 5px;border-radius:3px}
+footer{border-top:1px solid var(--rule);margin-top:34px;padding-top:12px;font-family:var(--mono);font-size:11.5px;color:var(--ink-soft)}
+
+@media (max-width:640px){
+  header.masthead{padding:14px 14px 12px}
+  main{padding:14px 14px 48px}
+  .controls input[type="search"]{width:100%}
+  .modelnote{margin-left:0}
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="brandrow">
+    <div class="wordmark"><a href="/">BankRegWire</a></div>
+    <button class="themebtn" id="themeToggle" type="button" aria-label="Switch color theme">Dark</button>
+  </div>
+  <div class="titleblock">
+    <h1>The Bank Tape</h1>
+    <p class="deck">Public bank equities priced against the call report. Stated and rate-adjusted tangible book, the deposit premium the market is paying, and the multiple each bank's returns can warrant.</p>
+    <p class="pulseline" id="pulseline">Loading the tape…</p>
+  </div>
+</header>
+
+<main>
+  <section class="hero" id="hero" hidden aria-label="Every bank in the universe on one price-to-book line">
+    <svg id="herosvg" viewBox="0 0 1000 158" preserveAspectRatio="xMidYMid meet" role="img"></svg>
+    <p class="herocaption">Every bank on one line: copper is the stated multiple, oxblood the rate-adjusted one, the vertical rule is tangible book. Bars turn oxblood where the adjustment carries a bank below book. Click any dot to find its row.</p>
+  </section>
+
+  <div class="proxystrip" id="proxystrip">
+    <div class="proxynote">Index proxies via sector ETFs. The licensed KBW indices are not redistributed here.</div>
+  </div>
+
+  <div class="controls">
+    <input type="search" id="q" placeholder="Bank or ticker" aria-label="Filter by bank or ticker">
+    <button class="chip" id="fBelow" aria-pressed="false" type="button">Below book</button>
+    <button class="chip" id="fStrad" aria-pressed="false" type="button">Straddlers</button>
+    <button class="chip size" data-size="s" aria-pressed="false" type="button">&lt;$10B</button>
+    <button class="chip size" data-size="m" aria-pressed="false" type="button">$10B to $100B</button>
+    <button class="chip size" data-size="l" aria-pressed="false" type="button">&gt;$100B</button>
+    <span class="modelnote" id="modelnote"></span>
+  </div>
+
+  <div class="panel">
+    <table id="tape" aria-describedby="pulseline">
+      <thead>
+        <tr>
+          <th class="l" data-key="name">Bank <span class="arrow"></span></th>
+          <th data-key="price">Price <span class="arrow"></span></th>
+          <th data-key="changePct">Day <span class="arrow"></span></th>
+          <th data-key="marketCap">Mkt cap <span class="arrow"></span></th>
+          <th data-key="pTbv">P/TBV <span class="arrow"></span></th>
+          <th data-key="pAdjTbv">Adj P/TBV <span class="arrow"></span></th>
+          <th data-key="gap" class="l">Book gap
+            <span class="dblegend"><i class="lc"></i>stated <i class="lo"></i>adjusted</span>
+            <span class="arrow"></span></th>
+          <th data-key="depositPremium">Dep. premium <span class="arrow"></span></th>
+          <th data-key="warrantedDelta">vs warranted <span class="arrow"></span></th>
+          <th data-key="peerResidual">vs peers <span class="arrow"></span></th>
+          <th data-key="fresh">Data <span class="arrow"></span></th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="11"><div class="emptystate">Loading…</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <section class="method">
+    <h2>How these numbers are made</h2>
+    <p>Figures are bank-level from the FFIEC call report of the stated period; the traded entity is the holding company, so for institutions with large nonbank operations the ratios run rich. Tangible book is total equity less goodwill and other intangibles. Adjusted tangible book further deducts the pre-tax unrealized loss on held-to-maturity securities (amortized cost less fair value, Schedule RC-B), the mark the balance sheet is allowed to omit.</p>
+    <p>Deposit premium is <code>(market cap − TBV) / core deposits</code>, the classic acquirer's yardstick. The warranted multiple is <code>(ROTE − g) / (COE − g)</code> with the assumptions shown above the table; "vs warranted" is the actual multiple minus that figure, the market's verdict in one number. "Vs peers" is the residual from a cross-sectional fit of the multiple on ROTE, uninsured deposit share, and size across this universe: cheap or rich given the profile, refit on every load. The detail rows carry a modeled between-quarters book value built from the earnings run-rate net of dividends only; it is labeled as a model and excludes rate drift. Prices are prior-close; call report data ages between quarters and each row says exactly how much.</p>
+  </section>
+
+  <footer>Prices: prior close via market data API · Fundamentals: FFIEC CDR via the BankRegWire call report pipeline · Not investment advice</footer>
+</main>
+
+<!-- Shared instrument chrome -->
+<script src="/brw-rail.js" defer></script>
+<script src="/brw-search.js" defer></script>
+
+<script>
+/* ====================================================================
+   SECTION 6: DATA + STATE
+   ==================================================================== */
+var API = "https://brw-bank-tape.joeysamowitz.workers.dev";
+var ENF = "https://brw-enforcement-wire.joeysamowitz.workers.dev/";
+var DB_MIN = 0.25, DB_MAX = 2.50, DB_W = 150, DB_H = 22;
+
+var STATE = {
+  rows: [], period: null, periodDays: null, model: null,
+  sortKey: "marketCap", sortDir: -1,
+  q: "", below: false, strad: false, size: null,
+  open: {}, enf: null
+};
+
+function fetchJson(url) {
+  return fetch(url).then(function (r) {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.json();
+  });
+}
+
+/* ====================================================================
+   SECTION 7: FORMATTERS
+   ==================================================================== */
+function fmtMoneyK(k) { /* input in $thousands */
+  if (k === null || k === undefined) return "·";
+  var b = k / 1e6;
+  if (Math.abs(b) >= 100) return "$" + Math.round(b) + "B";
+  if (Math.abs(b) >= 1) return "$" + b.toFixed(1) + "B";
+  return "$" + Math.round(k / 1e3) + "M";
+}
+function fmtX(v) { return v === null || v === undefined ? "·" : v.toFixed(2) + "x"; }
+function fmtPct(v, dp) {
+  if (v === null || v === undefined) return "·";
+  return (v * 100).toFixed(dp === undefined ? 1 : dp) + "%";
+}
+function fmtSigned(v, unit) {
+  if (v === null || v === undefined) return "·";
+  var s = (v >= 0 ? "+" : "") + v.toFixed(2) + (unit || "");
+  return s;
+}
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+  });
+}
+
+/* ====================================================================
+   SECTION 8: SIGNATURE ELEMENT, the gap dumbbell
+   Fixed domain across every cell so the 1.0x tick aligns into one
+   hairline down the column.
+   ==================================================================== */
+function dbX(mult) {
+  var m = Math.max(DB_MIN, Math.min(DB_MAX, mult));
+  return 4 + (m - DB_MIN) / (DB_MAX - DB_MIN) * (DB_W - 8);
+}
+function dumbbell(stated, adjusted) {
+  if (stated === null || adjusted === null) {
+    return '<span class="stamp">·</span>';
+  }
+  var x1 = dbX(stated), x2 = dbX(adjusted), xb = dbX(1);
+  var cy = DB_H / 2;
+  var crossing = (stated >= 1 && adjusted < 1) || (stated < 1 && adjusted >= 1);
+  return '<svg class="db" width="' + DB_W + '" height="' + DB_H + '" role="img" ' +
+    'aria-label="Stated ' + stated.toFixed(2) + 'x, adjusted ' + adjusted.toFixed(2) + 'x tangible book">' +
+    '<line class="track" x1="4" y1="' + cy + '" x2="' + (DB_W - 4) + '" y2="' + cy + '"/>' +
+    '<line class="bookline" x1="' + xb + '" y1="1" x2="' + xb + '" y2="' + (DB_H - 1) + '"/>' +
+    '<line class="bar' + (crossing ? " crossing" : "") + '" x1="' + x1 + '" y1="' + cy + '" x2="' + x2 + '" y2="' + cy + '"/>' +
+    '<circle class="stated" cx="' + x1 + '" cy="' + cy + '" r="4"/>' +
+    '<circle class="adjusted" cx="' + x2 + '" cy="' + cy + '" r="4"/>' +
+    '</svg>';
+}
+
+/* ====================================================================
+   SECTION 9: RENDER
+   ==================================================================== */
+function freshnessStamp() {
+  if (!STATE.period) return { txt: "no data", cls: "stale" };
+  var q = "Q" + Math.ceil(Number(STATE.period.slice(5, 7)) / 3) + " " + STATE.period.slice(0, 4);
+  var d = STATE.periodDays;
+  var cls = d > 150 ? "stale" : d > 120 ? "aging" : "";
+  return { txt: q + " · " + d + "d", cls: cls };
+}
+
+function sizeBucket(assetsK) {
+  if (assetsK === null || assetsK === undefined) return null;
+  if (assetsK < 10e6) return "s";
+  if (assetsK < 100e6) return "m";
+  return "l";
+}
+
+function visibleRows() {
+  var q = STATE.q.toLowerCase();
+  var rows = STATE.rows.filter(function (r) {
+    if (q && (r.name + " " + r.ticker).toLowerCase().indexOf(q) < 0) return false;
+    if (STATE.below && !(r.flags && r.flags.belowBook)) return false;
+    if (STATE.strad && !(r.flags && r.flags.straddler)) return false;
+    if (STATE.size && sizeBucket(r.assets) !== STATE.size) return false;
+    return true;
+  });
+  var k = STATE.sortKey, dir = STATE.sortDir;
+  rows.sort(function (a, b) {
+    var va = k === "fresh" ? 0 : a[k], vb = k === "fresh" ? 0 : b[k];
+    if (k === "name") return dir * String(a.name).localeCompare(String(b.name));
+    if (va === null || va === undefined) return 1;
+    if (vb === null || vb === undefined) return -1;
+    return dir * (va - vb);
+  });
+  return rows;
+}
+
+function detailRow(r) {
+  var m = STATE.model || { coe: 0.105, g: 0.03 };
+  var warrantedLine = r.warranted === null ? "·" :
+    "ROTE " + fmtPct(r.rote) + " · COE " + fmtPct(m.coe) + " · g " + fmtPct(m.g, 0) +
+    " → warranted " + fmtX(r.warranted) + " vs actual " + fmtX(r.pTbv);
+  var peerLine = r.peerFitted === null ? "·" :
+    "peers with this profile price at " + fmtX(r.peerFitted) + " · actual " + fmtX(r.pTbv);
+  var nowcastLine = r.pNowcastTbv === null ? "·" :
+    fmtX(r.pNowcastTbv) + " on modeled TBV " + fmtMoneyK(r.nowcastTbv);
+  var enfBadge = STATE.enf && STATE.enf[r.cert]
+    ? '<a href="' + esc(STATE.enf[r.cert]) + '" target="_blank" rel="noopener">Enforcement action in the last 180 days</a>'
+    : "";
+  return '<tr class="detail"><td colspan="11">' +
+    '<div class="detailgrid">' +
+    '<div class="dcell"><b>' + fmtPct(r.depositPremium) + '</b><span>deposit premium on core deposits</span></div>' +
+    '<div class="dcell"><b>' + fmtPct(r.uninsuredShare) + '</b><span>estimated uninsured deposit share</span></div>' +
+    '<div class="dcell"><b>' + fmtMoneyK(r.htmHaircut) + '</b><span>HTM unrealized loss (pre-tax)</span></div>' +
+    '<div class="dcell"><b>' + fmtMoneyK(r.tbv) + '</b><span>tangible book value</span></div>' +
+    '<div class="dcell"><b>' + fmtMoneyK(r.assets) + '</b><span>total assets</span></div>' +
+    '<div class="dcell"><b>' + fmtX(r.pCreditTbv) + '</b><span>P/TBV on credit-adjusted book (nonaccrual + 90d past due + OREO, net of ACL)</span></div>' +
+    '<div class="dcell"><b style="color:var(--ink-soft)">' + nowcastLine + '</b><span>nowcast, earnings accretion only, rate drift excluded</span></div>' +
+    '<div class="dcell"><b style="font-size:12.5px;font-weight:500">' + peerLine + '</b><span>cross-sectional model: ROTE, uninsured share, size</span></div>' +
+    '<div class="dcell"><b style="font-size:12.5px;font-weight:500">' + warrantedLine + '</b><span>warranted multiple math</span></div>' +
+    '</div>' +
+    '<div class="dlinks">' +
+    '<a href="/callreport/literal-form.html#cert=' + r.cert + '">Literal Form</a>' +
+    '<a href="/callreport/health-scanner.html#cert=' + r.cert + '">Health Scanner</a>' +
+    '<a href="https://banks.data.fdic.gov/bankfind-suite/bankfind?cert=' + r.cert + '" target="_blank" rel="noopener">FDIC BankFind</a>' +
+    enfBadge +
+    '</div></td></tr>';
+}
+
+function render() {
+  var tb = document.getElementById("tbody");
+  var rows = visibleRows();
+  var stamp = freshnessStamp();
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="11"><div class="emptystate">' +
+      (STATE.rows.length ? "No banks match these filters." :
+        "Awaiting first tape. Seed the universe and run the nightly sweep.") +
+      "</div></td></tr>";
+    return;
+  }
+  var html = "";
+  rows.forEach(function (r) {
+    var enf = STATE.enf && STATE.enf[r.cert];
+    html += '<tr class="bankrow' + (r.flags && r.flags.straddler ? " straddle" : "") +
+      '" data-cert="' + r.cert + '" tabindex="0" aria-expanded="' + (STATE.open[r.cert] ? "true" : "false") + '">' +
+      '<td class="l"><span class="bankname">' + esc(r.name) + '</span>' +
+      (enf ? '<span class="badge enf">ENF</span>' : "") +
+      (r.flags && r.flags.straddler ? '<span class="badge strad">below adj. book</span>' : "") +
+      '<br><span class="bankmeta">' + esc(r.ticker) + " · cert " + r.cert + "</span></td>" +
+      "<td>" + (r.price === null ? "·" : "$" + r.price.toFixed(2)) + "</td>" +
+      '<td class="' + (r.changePct > 0 ? "pos" : r.changePct < 0 ? "neg" : "") + '">' +
+      (r.changePct === null ? "·" : fmtSigned(r.changePct, "%")) + "</td>" +
+      "<td>" + fmtMoneyK(r.marketCap) + "</td>" +
+      "<td>" + fmtX(r.pTbv) + "</td>" +
+      "<td>" + fmtX(r.pAdjTbv) + "</td>" +
+      '<td class="l dumbbell">' + dumbbell(r.pTbv, r.pAdjTbv) + "</td>" +
+      "<td>" + fmtPct(r.depositPremium) + "</td>" +
+      '<td class="' + (r.warrantedDelta > 0 ? "" : r.warrantedDelta < 0 ? "neg" : "") + '">' +
+      (r.warrantedDelta === null ? "·" : fmtSigned(r.warrantedDelta, "x")) + "</td>" +
+      '<td class="' + (r.peerResidual > 0 ? "" : r.peerResidual < 0 ? "neg" : "") + '">' +
+      (r.peerResidual === null ? "·" : fmtSigned(r.peerResidual, "x")) + "</td>" +
+      '<td><span class="stamp ' + stamp.cls + '">' + stamp.txt + "</span></td>" +
+      "</tr>";
+    if (STATE.open[r.cert]) html += detailRow(r);
+  });
+  tb.innerHTML = html;
+}
+
+/* Hero: the whole universe compressed onto the multiple axis. Same fixed
+   domain as the dumbbell column, so the two share one geometry. */
+function renderHero() {
+  var priced = STATE.rows.filter(function (r) { return r.pTbv !== null && r.pAdjTbv !== null; });
+  var box = document.getElementById("hero");
+  if (priced.length < 5) { box.hidden = true; return; }
+  box.hidden = false;
+  var W = 1000, H = 158, TOP = 24, LANES = 7, LANE_H = 15;
+  function hx(mult) {
+    var m = Math.max(DB_MIN, Math.min(DB_MAX, mult));
+    return 16 + (m - DB_MIN) / (DB_MAX - DB_MIN) * (W - 32);
+  }
+  priced.sort(function (a, b) { return a.pTbv - b.pTbv; });
+  var xb = hx(1);
+  var svg = "";
+  /* axis ticks */
+  [0.5, 1.5, 2].forEach(function (t) {
+    svg += '<text x="' + hx(t) + '" y="' + (H - 4) + '" text-anchor="middle">' + t.toFixed(1) + "x</text>";
+  });
+  svg += '<line class="bookline" x1="' + xb + '" y1="' + (TOP - 10) + '" x2="' + xb + '" y2="' + (H - 16) + '"/>';
+  svg += '<text class="booklabel" x="' + (xb + 5) + '" y="' + (TOP - 12) + '">1.0x tangible book</text>';
+  /* median stated marker */
+  var meds = priced.map(function (r) { return r.pTbv; });
+  var md = meds[Math.floor(meds.length / 2)];
+  svg += '<line class="medtick" x1="' + hx(md) + '" y1="' + (H - 16) + '" x2="' + hx(md) + '" y2="' + (H - 22) + '"/>';
+  svg += '<text x="' + hx(md) + '" y="' + (H - 26) + '" text-anchor="middle">median ' + md.toFixed(2) + "x</text>";
+  priced.forEach(function (r, i) {
+    var y = TOP + (i % LANES) * LANE_H;
+    var x1 = hx(r.pTbv), x2 = hx(r.pAdjTbv);
+    var cross = (r.pTbv >= 1 && r.pAdjTbv < 1) || (r.pTbv < 1 && r.pAdjTbv >= 1);
+    var label = esc(r.name) + ": stated " + r.pTbv.toFixed(2) + "x, adjusted " + r.pAdjTbv.toFixed(2) + "x";
+    svg += '<g data-ticker="' + esc(r.ticker) + '"><title>' + label + "</title>" +
+      '<line class="bar' + (cross ? " crossing" : "") + '" x1="' + x1 + '" y1="' + y + '" x2="' + x2 + '" y2="' + y + '"/>' +
+      '<circle class="stated" cx="' + x1 + '" cy="' + y + '" r="3.6"/>' +
+      '<circle class="adjusted" cx="' + x2 + '" cy="' + y + '" r="3.6"/></g>';
+  });
+  var el = document.getElementById("herosvg");
+  el.innerHTML = svg;
+  el.onclick = function (e) {
+    var g = e.target.closest ? e.target.closest("g[data-ticker]") : null;
+    if (!g) return;
+    var input = document.getElementById("q");
+    input.value = g.getAttribute("data-ticker");
+    STATE.q = input.value;
+    render();
+    document.getElementById("tape").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+}
+
+function renderProxies(proxies) {
+  var strip = document.getElementById("proxystrip");
+  var note = strip.querySelector(".proxynote");
+  var order = ["KRE", "KBE", "KBWB"];
+  var html = "";
+  order.forEach(function (sym) {
+    var p = proxies[sym];
+    if (!p) return;
+    var up = p.changePct >= 0;
+    html += '<div class="proxycard"><div class="sym">' + sym + '</div>' +
+      '<div class="px">$' + p.price.toFixed(2) + "</div>" +
+      '<div class="chg ' + (up ? "up" : "down") + '">' + fmtSigned(p.changePct, "%") + "</div></div>";
+  });
+  strip.innerHTML = html;
+  strip.appendChild(note);
+}
+
+/* ====================================================================
+   SECTION 10: ENFORCEMENT OVERLAY (best-effort, fails silent)
+   Conservative name match: the wire's respondent must contain the
+   bank's distinctive leading tokens. A miss shows nothing rather than
+   a wrong badge.
+   ==================================================================== */
+function normName(s) {
+  return String(s).toLowerCase()
+    .replace(/\b(the|inc|corp|corporation|co|company|financial|group|bancorp|bancshares|bankshares|holdings|na|n\.a\.)\b/g, " ")
+    .replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
+}
+function loadEnforcement() {
+  fetchJson(ENF).then(function (body) {
+    var actions = body.actions || [];
+    var cutoff = Date.now() - 180 * 86400000;
+    var map = {};
+    STATE.rows.forEach(function (r) {
+      var key = normName(r.name).split(" ").slice(0, 2).join(" ");
+      if (key.length < 5) return;
+      for (var i = 0; i < actions.length; i++) {
+        var a = actions[i];
+        var when = Date.parse(a.actionDate || a.announcedDate || "");
+        if (!isFinite(when) || when < cutoff) continue;
+        if (normName(a.respondent || "").indexOf(key) >= 0) {
+          map[r.cert] = a.documentUrl || ENF;
+          break;
+        }
+      }
+    });
+    STATE.enf = map;
+    render();
+  }).catch(function () { /* overlay is optional */ });
+}
+
+/* ====================================================================
+   SECTION 11: WIRING
+   ==================================================================== */
+function setSort(key) {
+  if (STATE.sortKey === key) STATE.sortDir = -STATE.sortDir;
+  else { STATE.sortKey = key; STATE.sortDir = key === "name" ? 1 : -1; }
+  var ths = document.querySelectorAll("thead th");
+  for (var i = 0; i < ths.length; i++) {
+    var th = ths[i];
+    if (th.getAttribute("data-key") === key) {
+      th.setAttribute("aria-sort", STATE.sortDir === 1 ? "ascending" : "descending");
+      th.querySelector(".arrow").textContent = STATE.sortDir === 1 ? "↑" : "↓";
+    } else {
+      th.removeAttribute("aria-sort");
+      th.querySelector(".arrow").textContent = "";
+    }
+  }
+  render();
+}
+
+function boot() {
+  fetchJson(API + "/api/tape").then(function (body) {
+    STATE.rows = body.banks || [];
+    STATE.period = body.period;
+    STATE.periodDays = body.periodDaysOld;
+    STATE.model = body.model;
+    if (body.model) {
+      document.getElementById("modelnote").textContent =
+        "Warranted model: COE " + (body.model.coe * 100).toFixed(1) + "% · g " +
+        (body.model.g * 100).toFixed(0) + "%";
+    }
+    renderProxies(body.proxies || {});
+    render();
+    renderHero();
+    loadEnforcement();
+  }).catch(function () {
+    document.getElementById("tbody").innerHTML =
+      '<tr><td colspan="11"><div class="emptystate">The tape did not load. Check the worker at /diag, then reload.</div></td></tr>';
+  });
+
+  fetchJson(API + "/pulse").then(function (p) {
+    document.getElementById("pulseline").textContent = p.headline || "";
+  }).catch(function () {
+    document.getElementById("pulseline").textContent = "";
+  });
+
+  document.getElementById("q").addEventListener("input", function (e) {
+    STATE.q = e.target.value; render();
+  });
+  document.getElementById("fBelow").addEventListener("click", function () {
+    STATE.below = !STATE.below;
+    this.setAttribute("aria-pressed", String(STATE.below));
+    render();
+  });
+  document.getElementById("fStrad").addEventListener("click", function () {
+    STATE.strad = !STATE.strad;
+    this.setAttribute("aria-pressed", String(STATE.strad));
+    render();
+  });
+  var sizeChips = document.querySelectorAll(".chip.size");
+  for (var i = 0; i < sizeChips.length; i++) {
+    sizeChips[i].addEventListener("click", function () {
+      var v = this.getAttribute("data-size");
+      STATE.size = STATE.size === v ? null : v;
+      for (var j = 0; j < sizeChips.length; j++) {
+        sizeChips[j].setAttribute("aria-pressed", String(sizeChips[j].getAttribute("data-size") === STATE.size));
+      }
+      render();
+    });
+  }
+
+  var thead = document.querySelector("thead");
+  thead.addEventListener("click", function (e) {
+    var th = e.target.closest ? e.target.closest("th") : null;
+    if (th && th.getAttribute("data-key")) setSort(th.getAttribute("data-key"));
+  });
+
+  document.getElementById("tbody").addEventListener("click", function (e) {
+    if (e.target.closest && e.target.closest("a")) return;
+    var tr = e.target.closest ? e.target.closest("tr.bankrow") : null;
+    if (!tr) return;
+    var cert = tr.getAttribute("data-cert");
+    STATE.open[cert] = !STATE.open[cert];
+    render();
+  });
+  document.getElementById("tbody").addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var tr = e.target.closest ? e.target.closest("tr.bankrow") : null;
+    if (!tr) return;
+    e.preventDefault();
+    var cert = tr.getAttribute("data-cert");
+    STATE.open[cert] = !STATE.open[cert];
+    render();
+  });
+
+  /* theme toggle, persisted, private-browsing safe */
+  var btn = document.getElementById("themeToggle");
+  var saved = null;
+  try { saved = localStorage.getItem("brwTheme"); } catch (e) {}
+  if (saved === "dark") document.documentElement.setAttribute("data-theme", "dark");
+  syncThemeBtn();
+  btn.addEventListener("click", function () {
+    var dark = document.documentElement.getAttribute("data-theme") === "dark";
+    if (dark) document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", "dark");
+    try { localStorage.setItem("brwTheme", dark ? "light" : "dark"); } catch (e) {}
+    syncThemeBtn();
+  });
+  function syncThemeBtn() {
+    btn.textContent = document.documentElement.getAttribute("data-theme") === "dark" ? "Light" : "Dark";
+  }
+}
+
+boot();
+</script>
+</body>
+</html>
