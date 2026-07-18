@@ -1,0 +1,75 @@
+# =========================================================================
+# BANK TAPE REFRESH  (.github/workflows/refresh-bank-tape.yml)
+# -------------------------------------------------------------------------
+# Two cadences in one workflow, split by matching github.event.schedule:
+#   quotes        weeknights 22:30 UTC (after NYSE close, EST or EDT)
+#   fundamentals  1st and 15th monthly at 13:00 UTC; the script exits
+#                 green when the tape already holds the newest period,
+#                 so off-cycle runs cost nothing
+#   universe      manual only. Resolves FDIC certs and uploads the result
+#                 as a downloadable artifact, so seeding needs no local
+#                 Node install. Re-run quarterly when constituents shift.
+# Secrets: FINNHUB_API_KEY, TAPE_SYNC_SECRET
+# =========================================================================
+
+name: Refresh Bank Tape
+
+on:
+  schedule:
+    - cron: "30 22 * * 1-5"   # quotes
+    - cron: "0 13 1,15 * *"   # fundamentals
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Which job to run"
+        type: choice
+        options: [quotes, fundamentals, both, universe]
+        default: quotes
+      period:
+        description: "Fundamentals period (YYYY-MM-DD or latest)"
+        default: "latest"
+
+jobs:
+  universe:
+    if: inputs.job == 'universe'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Resolve FDIC certs
+        run: node scripts/tape-universe.mjs
+      - name: Upload universe.json for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: universe
+          path: config/universe.json
+
+  quotes:
+    if: github.event.schedule == '30 22 * * 1-5' || inputs.job == 'quotes' || inputs.job == 'both'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Nightly quote sweep
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          TAPE_SYNC_SECRET: ${{ secrets.TAPE_SYNC_SECRET }}
+        run: node scripts/tape-quotes.mjs
+
+  fundamentals:
+    if: github.event.schedule == '0 13 1,15 * *' || inputs.job == 'fundamentals' || inputs.job == 'both'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Quarterly fundamentals pass
+        env:
+          TAPE_SYNC_SECRET: ${{ secrets.TAPE_SYNC_SECRET }}
+          TAPE_PERIOD: ${{ inputs.period || 'latest' }}
+        run: node scripts/tape-fundamentals.mjs
