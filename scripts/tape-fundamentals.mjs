@@ -125,30 +125,85 @@ function toNum(v) {
   return neg ? -n : n;
 }
 
-/* The worker's own note: .values is a generic two-column SDF parse and "the
-   fallback, not the authority", with the full facsimile under .raw. If a line
-   carries more than two columns, a needed code can be missing from .values
-   while sitting in plain sight in .raw. Parse raw tolerantly and use it only
-   to fill gaps, never to override what the worker already parsed. */
+/* SDF PARSER
+ * ---------------------------------------------------------------------
+ * The worker's .values is a two-column tab parse and its own note calls it
+ * "the fallback, not the authority", with the facsimile under .raw. The real
+ * CDR facsimile is SEMICOLON-delimited and WIDE: a header row of MDRM codes
+ * and a following row of values, matched by column position. Against that,
+ * the tab parse matches nothing and .values comes back empty, which is
+ * exactly what the live probe returned.
+ *
+ * So parse .raw properly, handling both shapes and either delimiter:
+ *   wide   header row with several MDRM codes, values on the next row
+ *   narrow one code and one value per row
+ * A facsimile can contain several wide blocks (one per schedule), so keep
+ * scanning after the first pair rather than stopping.
+ * ------------------------------------------------------------------- */
 const MDRM_RE = /^[A-Z]{4}[A-Z0-9]{4}$/;
 const RAW_FILLS = [];
+let RAW_SHAPE = null;   /* remembered for the run log */
+
+function splitCells(line, delim) {
+  return line.split(delim).map((c) => c.trim().replace(/^"(.*)"$/, "$1"));
+}
+
+function sniffDelimiter(raw) {
+  const head = raw.slice(0, 4000);
+  const counts = [[";", (head.match(/;/g) || []).length],
+                  ["\t", (head.match(/\t/g) || []).length],
+                  ["|", (head.match(/\|/g) || []).length],
+                  [",", (head.match(/,/g) || []).length]];
+  counts.sort((a, b) => b[1] - a[1]);
+  return counts[0][1] > 0 ? counts[0][0] : ";";
+}
 
 function parseRawSdf(raw) {
   const out = {};
   if (typeof raw !== "string" || !raw) return out;
-  for (const line of raw.split(/\r?\n/)) {
-    if (!line) continue;
-    const cols = line.split(/\t/);
-    for (let i = 0; i < cols.length; i++) {
-      const code = cols[i].trim().toUpperCase();
+  const delim = sniffDelimiter(raw);
+  const lines = raw.split(/\r?\n/);
+  let wideBlocks = 0, narrowRows = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i] || !lines[i].trim()) continue;
+    const cells = splitCells(lines[i], delim);
+
+    /* wide block: this row is a header carrying MDRM codes, values follow */
+    const codeCols = [];
+    for (let c = 0; c < cells.length; c++) {
+      if (MDRM_RE.test(cells[c].toUpperCase())) codeCols.push(c);
+    }
+    if (codeCols.length >= 2) {
+      let j = i + 1;
+      while (j < lines.length && !(lines[j] && lines[j].trim())) j++;
+      if (j < lines.length) {
+        const vals = splitCells(lines[j], delim);
+        let filled = 0;
+        for (const c of codeCols) {
+          const code = cells[c].toUpperCase();
+          const v = toNum(vals[c]);
+          if (v !== null && !(code in out)) { out[code] = v; filled++; }
+        }
+        if (filled) { wideBlocks++; i = j; continue; }
+      }
+    }
+
+    /* narrow row: CODE<delim>VALUE */
+    for (let c = 0; c < cells.length; c++) {
+      const code = cells[c].toUpperCase();
       if (!MDRM_RE.test(code)) continue;
-      /* take the first parseable number to the right of the code */
-      for (let j = i + 1; j < cols.length; j++) {
-        const v = toNum(cols[j]);
-        if (v !== null) { if (!(code in out)) out[code] = v; break; }
+      for (let k = c + 1; k < cells.length; k++) {
+        const v = toNum(cells[k]);
+        if (v !== null) { if (!(code in out)) { out[code] = v; narrowRows++; } break; }
       }
       break;
     }
+  }
+
+  if (!RAW_SHAPE) {
+    RAW_SHAPE = `delimiter ${JSON.stringify(delim)}, ${wideBlocks} wide block(s), ` +
+                `${narrowRows} narrow row(s), ${Object.keys(out).length} codes`;
   }
   return out;
 }
@@ -352,8 +407,18 @@ async function main() {
         return;
       }
 
-      const row = compute(codeMap(body), period || p || "");
-      if (!row) throw new Error("no equity value in response");
+      const map = codeMap(body);
+      const row = compute(map, period || p || "");
+      if (!row) {
+        /* First failure prints the head of the facsimile. A parse that finds
+           nothing is unfixable from a status code alone. */
+        if (fail === 0 && typeof body.raw === "string" && body.raw) {
+          console.log("\n  --- first 400 chars of .raw, for shape diagnosis ---");
+          console.log("  " + body.raw.slice(0, 400).replace(/\r?\n/g, "\n  "));
+          console.log("  --- codes parsed: " + Object.keys(map).length + " ---\n");
+        }
+        throw new Error("no equity value in response");
+      }
       banks[String(b.cert)] = row;
       ok++;
       await sleep(400); /* worker-side 30d cache absorbs most of these */
@@ -386,6 +451,7 @@ async function main() {
     console.log(`\nAll ${ok} banks on ${period}. Clean pass.`);
   }
 
+  if (RAW_SHAPE) console.log(`\nSDF parse: ${RAW_SHAPE}`);
   if (RAW_FILLS.length) {
     const total = RAW_FILLS.reduce((a, b) => a + b, 0);
     console.log(`\nRaw SDF backfill: ${total} codes across ${RAW_FILLS.length} banks were absent`);
