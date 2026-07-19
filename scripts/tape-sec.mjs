@@ -75,7 +75,7 @@ const LADDERS = {
                    "PreferredStockValueOutstanding",
                    "PreferredStockIncludingAdditionalPaidInCapital",
                    "PreferredStockLiquidationPreferenceValue"
-                 ], optional: true },
+                 ], optional: true, zeroIsSuspect: true },
   minority:    { taxonomy: "us-gaap", unit: "USD", tags: ["MinorityInterest"], optional: true },
   goodwill:    { taxonomy: "us-gaap", unit: "USD", tags: ["Goodwill"], optional: true },
   intangibles: { taxonomy: "us-gaap", unit: "USD", tags: ["IntangibleAssetsNetExcludingGoodwill", "FiniteLivedIntangibleAssetsNet"], optional: true },
@@ -84,17 +84,25 @@ const LADDERS = {
 
 async function fieldFor(cik, field, periodYmd, tally) {
   const spec = LADDERS[field];
+  let zeroFact = null;   /* remembered, but never allowed to end the ladder */
   for (const tag of spec.tags) {
     const url = `${SEC}/api/xbrl/companyconcept/CIK${cik}/${spec.taxonomy}/${tag}.json`;
     const concept = await secJson(url);
     await sleep(PACE_MS);
     if (!concept) continue;
     const fact = pickFact(concept, spec.unit, periodYmd);
-    if (fact) {
-      tally[`${field}:${tag}`] = (tally[`${field}:${tag}`] || 0) + 1;
-      fact.tag = tag;
-      return fact;
-    }
+    if (!fact) continue;
+    fact.tag = tag;
+    /* Zero from a par-value line is not evidence of no preferred stock. Keep
+       walking the ladder; fall back to the zero only if nothing better exists. */
+    if (spec.zeroIsSuspect && !fact.value) { if (!zeroFact) zeroFact = fact; continue; }
+    tally[`${field}:${tag}`] = (tally[`${field}:${tag}`] || 0) + 1;
+    return fact;
+  }
+  if (zeroFact) {
+    tally[`${field}:${zeroFact.tag} (zero)`] = (tally[`${field}:${zeroFact.tag} (zero)`] || 0) + 1;
+    zeroFact.wasZero = true;
+    return zeroFact;
   }
   return null;
 }
@@ -141,7 +149,7 @@ async function main() {
         goodwillK: K(gw),
         intangiblesK: K(intang),
         minorityK: K(minority),
-        preferredTag: pref ? pref.tag : null,
+        preferredTag: pref && !pref.wasZero ? pref.tag : null,
         shares: shares ? shares.value : null,
         factEnd: eq.end,
         form: eq.form,
@@ -151,7 +159,7 @@ async function main() {
       const B = (v) => (v / 1e6).toFixed(2);
       console.log(
         `  ${b.ticker.padEnd(6)} TCE $${B(tceK)}B  = eq ${B(K(eq))}` +
-        ` - pref ${B(K(pref))}${pref ? "" : "*"}` +
+        ` - pref ${B(K(pref))}${pref && !pref.wasZero ? "" : "*"}` +
         ` - nci ${B(K(minority))}` +
         ` - gw ${B(K(gw))}${gw ? "" : "*"}` +
         ` - intang ${B(K(intang))}${intang ? "" : "*"}` +
@@ -179,9 +187,23 @@ async function main() {
   const high = ratios.filter((x) => x.r > 1.10);
   if (high.length) {
     console.log(`\nBank book exceeds holdco tangible common by >10% at ${high.length} banks:`);
-    high.forEach((x) => console.log(
-      `  ${x.ticker.padEnd(6)} ${(x.r * 100).toFixed(0)}%` +
-      (x.noPref ? "   (no preferred tag found; TCE may be overstated)" : "   (double leverage or a bank-level goodwill gap)")));
+    console.log("  ticker  ratio  excess over holdco TCE  holdco gw+intangibles  explained");
+    high.forEach((x) => {
+      const h = holdcos[x.ticker];
+      const bank = universe.find((u) => u.ticker === x.ticker);
+      const excess = bank.tbv - h.tceK;
+      const intangTotal = (h.goodwillK || 0) + (h.intangiblesK || 0);
+      const share = intangTotal ? excess / intangTotal : null;
+      console.log(
+        `  ${x.ticker.padEnd(6)} ${(x.r * 100).toFixed(0)}%` +
+        `   $${(excess / 1e6).toFixed(2)}B` +
+        `                 $${(intangTotal / 1e6).toFixed(2)}B` +
+        `             ${share === null ? "n/a" : (share * 100).toFixed(0) + "%"}` +
+        (x.noPref ? "   [no preferred tag]" : ""));
+    });
+    console.log("  If 'explained' clusters near 100%, bank-level goodwill is not being");
+    console.log("  subtracted on the call report side. If it scatters, the gap is real");
+    console.log("  double leverage: holdco debt downstreamed as bank equity.");
   }
   const low = ratios.filter((x) => x.r < 0.70);
   if (low.length) {
