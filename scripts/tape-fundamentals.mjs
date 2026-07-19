@@ -10,7 +10,11 @@
  * Env:
  *   TAPE_SYNC_SECRET   repo secret (matches bank-tape worker SYNC_SECRET)
  *   TAPE_WORKER_URL    optional override
- *   CALLREPORT_BASE    optional, defaults to https://fdic.bankregwire.com
+ *   CALLREPORT_BASE    optional. Defaults to the call report worker's
+ *                      workers.dev host. The custom domain
+ *                      fdic.bankregwire.com is NOT bound to a route and
+ *                      fails DNS from the runner; do not "restore" it
+ *                      without checking that it resolves first.
  *   TAPE_PERIOD        optional, e.g. 2026-03-31; defaults to "latest"
  *
  * The callreport worker is origin-gated, so requests carry the site origin.
@@ -29,7 +33,7 @@
  * ========================================================================= */
 
 const WORKER = process.env.TAPE_WORKER_URL || "https://brw-bank-tape.joeysamowitz.workers.dev";
-const CR_BASE = process.env.CALLREPORT_BASE || "https://fdic.bankregwire.com";
+const CR_BASE = (process.env.CALLREPORT_BASE || "").trim() || "https://fdic-bankregwire.joeysamowitz.workers.dev";
 const SECRET = process.env.TAPE_SYNC_SECRET;
 const PERIOD = process.env.TAPE_PERIOD || "latest";
 const ORIGIN = "https://bankregwire.com";
@@ -37,6 +41,50 @@ const ORIGIN = "https://bankregwire.com";
 if (!SECRET) { console.error("TAPE_SYNC_SECRET missing"); process.exit(1); }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* Node wraps transport errors as a bare "fetch failed" with the real reason
+   on .cause. Without this, DNS failure, refused connection, TLS mismatch and
+   timeout are indistinguishable in the log. */
+function why(e) {
+  const c = e && e.cause;
+  if (!c) return e && e.message ? e.message : String(e);
+  const bits = [c.code, c.errno, c.syscall, c.hostname, c.message].filter(Boolean);
+  return `${e.message} (${bits.join(" ")})`;
+}
+
+/* One probe before the loop. Thirty-seven identical failures tell you nothing
+   that the first one didn't. */
+async function preflight() {
+  const url = `${CR_BASE}/diag`;
+  console.log(`Preflight: ${url}`);
+  let res;
+  try {
+    res = await fetch(url, { headers: { Origin: ORIGIN, Referer: ORIGIN + "/" } });
+  } catch (e) {
+    console.error(`\nCannot reach the call report worker at ${CR_BASE}`);
+    console.error(`  ${why(e)}`);
+    console.error("\nThe request never got a response, so this is not the origin gate");
+    console.error("and not a bad cert. Check, in order:");
+    console.error(`  1. Does ${CR_BASE} load in a browser? If not, the hostname is wrong.`);
+    console.error("  2. Is the call report worker on a workers.dev URL instead of a custom domain?");
+    console.error("  3. Re-run this job with the CALLREPORT_BASE input set to the correct origin.");
+    process.exit(1);
+  }
+  console.log(`  responded HTTP ${res.status}`);
+  if (res.status === 401 || res.status === 403) {
+    console.error(`\nReached the worker but it refused the request (HTTP ${res.status}).`);
+    console.error("That is the origin/referer gate or Zero Trust Access. The script already");
+    console.error(`sends Origin: ${ORIGIN}. If Access is on the hostname, this job needs a`);
+    console.error("service token or the hostname needs an Access bypass for automation.");
+    process.exit(1);
+  }
+  if (res.status === 404) {
+    console.error(`\n${url} returned 404. The worker is reachable but /diag is not there,`);
+    console.error("so the path prefix is probably different (for example /api/callreport");
+    console.error("rather than /callreport). Set CALLREPORT_BASE to include the prefix.");
+    process.exit(1);
+  }
+}
 
 /* ---- defensive value extraction ---------------------------------------- */
 
@@ -141,6 +189,9 @@ function compute(m, period) {
 /* ---- main --------------------------------------------------------------- */
 
 async function main() {
+  console.log(`Call report base: ${CR_BASE}`);
+  console.log(`Tape worker:      ${WORKER}`);
+  await preflight();
   const tape = await (await fetch(`${WORKER}/api/tape`)).json();
   const universe = (tape.banks || []).filter((b) => b.cert);
   if (!universe.length) throw new Error("universe empty or certs unresolved: seed config:universe first");
@@ -170,8 +221,14 @@ async function main() {
       ok++;
       await sleep(400); /* worker-side 30d cache absorbs most of these */
     } catch (e) {
-      console.log(`  cert ${b.cert} (${b.ticker}): ${e.message}`);
+      console.log(`  cert ${b.cert} (${b.ticker}): ${why(e)}`);
       fail++;
+      /* A transport failure is a host problem, not a per-bank problem. Do not
+         grind through the rest of the universe proving the same point. */
+      if (e && e.cause && fail >= 3 && ok === 0) {
+        console.error(`\nThree transport failures with zero successes against ${CR_BASE}. Stopping.`);
+        process.exit(1);
+      }
     }
   }
 
