@@ -181,6 +181,9 @@ tbody tr.straddle:hover td{background:var(--oxblood-soft)}
 .badge.enf{background:var(--oxblood);color:var(--paper-2)}
 .badge.strad{background:var(--paper);border:1px solid var(--oxblood);color:var(--oxblood)}
 .badge.mc{background:var(--paper);border:1px solid var(--rule-strong);color:var(--ink-soft)}
+td.dstream{font-variant-numeric:tabular-nums}
+td.dstream.on{color:var(--copper);font-weight:700}
+td.dstream.under{color:var(--ink-soft)}
 tr.muted td:not(:nth-child(1)):not(:nth-child(2)):not(:nth-child(3)):not(:nth-child(4)){opacity:.45}
 .stamp{font-size:11.5px;color:var(--ink-soft)}
 .stamp.aging{color:var(--copper)}
@@ -247,7 +250,7 @@ footer{border-top:1px solid var(--rule);margin-top:34px;padding-top:12px;font-fa
   </div>
   <div class="titleblock">
     <h1>The Bank Tape</h1>
-    <p class="deck">Public bank equities priced against the call report. Stated and rate-adjusted tangible book, the deposit premium the market is paying, and the multiple each bank's returns can warrant.</p>
+    <p class="deck">Public bank equities priced against the call report. Stated and rate-adjusted tangible book, the deposit premium the market is paying, the multiple each bank's returns can warrant, and how much of each bank's equity was downstreamed from its parent.</p>
     <p class="pulseline" id="pulseline">Loading the tape…</p>
   </div>
 </header>
@@ -288,11 +291,12 @@ footer{border-top:1px solid var(--rule);margin-top:34px;padding-top:12px;font-fa
           <th data-key="depositPremium">Dep. premium <span class="arrow"></span></th>
           <th data-key="warrantedDelta">vs warranted <span class="arrow"></span></th>
           <th data-key="peerResidual">vs peers <span class="arrow"></span></th>
+          <th data-key="bankShareOfHoldco" title="Bank tangible equity as a share of consolidated tangible common. Above 100% the parent is funding the bank with preferred or holdco debt.">Downstream <span class="arrow"></span></th>
           <th data-key="fresh">Data <span class="arrow"></span></th>
         </tr>
       </thead>
       <tbody id="tbody">
-        <tr><td colspan="11"><div class="emptystate">Loading…</div></td></tr>
+        <tr><td colspan="12"><div class="emptystate">Loading…</div></td></tr>
       </tbody>
     </table>
   </div>
@@ -300,7 +304,7 @@ footer{border-top:1px solid var(--rule);margin-top:34px;padding-top:12px;font-fa
   <section class="method">
     <h2>How these numbers are made</h2>
     <p>Figures are bank-level from the FFIEC call report of the stated period; the traded entity is the holding company, so for institutions with large nonbank operations the ratios run rich. Tangible book is total equity less goodwill and other intangibles. Adjusted tangible book further deducts the pre-tax unrealized loss on held-to-maturity securities (amortized cost less fair value, Schedule RC-B), the mark the balance sheet is allowed to omit.</p>
-    <p>Deposit premium is <code>(market cap − TBV) / core deposits</code>, the classic acquirer's yardstick. The warranted multiple is <code>(ROTE − g) / (COE − g)</code> with the assumptions shown above the table; "vs warranted" is the actual multiple minus that figure, the market's verdict in one number. "Vs peers" is the residual from a cross-sectional fit of the multiple on ROTE, uninsured deposit share, and size across this universe: cheap or rich given the profile, refit on every load. The detail rows carry a modeled between-quarters book value built from the earnings run-rate net of dividends only; it is labeled as a model and excludes rate drift. Where SEC filings supply it, the detail rows carry a holdco check: tangible common equity from the 10-Q or 10-K, the multiple on that consolidated book, and how much of it the lead bank's call report actually covers. Multiples marked "h" are priced on the holdco book. The book-gap axis is scaled to the multiples actually present in the universe, so a bank carrying a large held-to-maturity mark is never clipped at the frame. Banks marked multi-charter belong to a holding company that runs several bank charters; their book-value columns are withheld rather than estimated, since one charter's call report cannot be compared to the whole company's market value. Prices are prior-close; call report data ages between quarters and each row says exactly how much.</p>
+    <p>Deposit premium is <code>(market cap − TBV) / core deposits</code>, the classic acquirer's yardstick. The warranted multiple is <code>(ROTE − g) / (COE − g)</code> with the assumptions shown above the table; "vs warranted" is the actual multiple minus that figure, the market's verdict in one number. "Vs peers" is the residual from a cross-sectional fit of the multiple on ROTE, uninsured deposit share, and size across this universe: cheap or rich given the profile, refit on every load. The detail rows carry a modeled between-quarters book value built from the earnings run-rate net of dividends only; it is labeled as a model and excludes rate drift. The downstream column is bank-level tangible equity divided by the holding company's consolidated tangible common equity. Above 100% the subsidiary carries more tangible equity than the entire group's common, which is only possible where the parent has funded it with capital that is not common equity, ordinarily preferred stock or holding company debt: double leverage, measured rather than inferred. Below 100% the group holds tangible common outside the lead charter. The reading is checkable against banks whose goodwill runs a third to a half of equity and which still land within ten points of parity, since that cannot occur unless bank-level goodwill is being deducted correctly. Where SEC filings supply it, the detail rows carry a holdco check: tangible common equity from the 10-Q or 10-K, the multiple on that consolidated book, and how much of it the lead bank's call report actually covers. Multiples marked "h" are priced on the holdco book. The book-gap axis is scaled to the multiples actually present in the universe, so a bank carrying a large held-to-maturity mark is never clipped at the frame. Banks marked multi-charter belong to a holding company that runs several bank charters; their book-value columns are withheld rather than estimated, since one charter's call report cannot be compared to the whole company's market value. Prices are prior-close; call report data ages between quarters and each row says exactly how much.</p>
   </section>
 
   <footer>Prices: prior close via market data API · Fundamentals: FFIEC CDR via the BankRegWire call report pipeline · Not investment advice</footer>
@@ -454,7 +458,7 @@ function detailRow(r) {
         'Market capitalization covers all of them while a call report covers one, so book-value multiples ' +
         'would overstate the bank by a wide margin. Price and market capitalization are shown; every ' +
         'book-derived figure is withheld until the charters are consolidated.';
-    return '<tr class="detail"><td colspan="11">' +
+    return '<tr class="detail"><td colspan="12">' +
       '<p style="margin:0 0 8px;max-width:70ch">' + mcExplain + '</p>' +
       '<div class="dlinks"><a href="/callreport/literal-form.html#cert=' + r.cert + '">Literal Form (lead charter)</a>' +
       '<a href="https://banks.data.fdic.gov/bankfind-suite/bankfind?cert=' + r.cert + '" target="_blank" rel="noopener">FDIC BankFind</a></div>' +
@@ -465,8 +469,12 @@ function detailRow(r) {
     "ROTE " + fmtPct(r.rote) + " · COE " + fmtPct(m.coe) + " · g " + fmtPct(m.g, 0) +
     " → warranted " + fmtX(r.warranted) + " vs actual " + fmtX(r.pTbv);
   var holdcoLine = r.holdcoTce === null ? "·" :
-    fmtX(r.pHoldcoTce) + " on holdco tangible common" +
-    (r.bankShareOfHoldco !== null ? " · bank book is " + fmtPct(r.bankShareOfHoldco, 0) + " of it" : "");
+    fmtX(r.pHoldcoTce) + " on holdco tangible common " + fmtMoneyK(r.holdcoTce);
+  var dsLine = r.bankShareOfHoldco === null ? "·" : (
+    r.bankShareOfHoldco > 1
+      ? "The bank holds " + fmtPct(r.bankShareOfHoldco, 0) + " of the group's tangible common, so " +
+        fmtMoneyK(r.tbv - r.holdcoTce) + " of its equity is funded by parent capital that is not common: preferred, or holdco debt."
+      : "The bank holds " + fmtPct(r.bankShareOfHoldco, 0) + " of the group's tangible common; the remainder sits outside the lead charter.");
   var peerLine = r.peerFitted === null ? "·" :
     "peers with this profile price at " + fmtX(r.peerFitted) + " · actual " + fmtX(r.pTbv);
   var nowcastLine = r.pNowcastTbv === null ? "·" :
@@ -474,7 +482,7 @@ function detailRow(r) {
   var enfBadge = STATE.enf && STATE.enf[r.cert]
     ? '<a href="' + esc(STATE.enf[r.cert]) + '" target="_blank" rel="noopener">Enforcement action in the last 180 days</a>'
     : "";
-  return '<tr class="detail"><td colspan="11">' +
+  return '<tr class="detail"><td colspan="12">' +
     '<div class="detailgrid">' +
     '<div class="dcell"><b>' + fmtPct(r.depositPremium) + '</b><span>deposit premium on core deposits</span></div>' +
     '<div class="dcell"><b>' + fmtPct(r.uninsuredShare) + '</b><span>estimated uninsured deposit share</span></div>' +
@@ -485,6 +493,7 @@ function detailRow(r) {
     '<div class="dcell"><b style="color:var(--ink-soft)">' + nowcastLine + '</b><span>nowcast, earnings accretion only, rate drift excluded</span></div>' +
     '<div class="dcell"><b style="font-size:12.5px;font-weight:500">' + peerLine + '</b><span>cross-sectional model: ROTE, uninsured share, size</span></div>' +
     '<div class="dcell"><b style="font-size:12.5px;font-weight:500">' + holdcoLine + '</b><span>holdco check, tangible common equity from the 10-Q/10-K (SEC XBRL)</span></div>' +
+    '<div class="dcell"><b style="font-size:12.5px;font-weight:500">' + dsLine + '</b><span>downstream ratio, bank tangible equity over consolidated tangible common</span></div>' +
     '<div class="dcell"><b style="font-size:12.5px;font-weight:500">' + warrantedLine + '</b><span>warranted multiple math</span></div>' +
     '</div>' +
     '<div class="spark" id="spark-' + r.cert + '"></div>' +
@@ -501,7 +510,7 @@ function render() {
   var rows = visibleRows();
   var stamp = freshnessStamp();
   if (!rows.length) {
-    tb.innerHTML = '<tr><td colspan="11"><div class="emptystate">' +
+    tb.innerHTML = '<tr><td colspan="12"><div class="emptystate">' +
       (STATE.rows.length ? "No banks match these filters." :
         "Awaiting first tape. Seed the universe and run the nightly sweep.") +
       "</div></td></tr>";
@@ -530,6 +539,8 @@ function render() {
       (r.warrantedDelta === null ? "·" : fmtSigned(r.warrantedDelta, "x")) + "</td>" +
       '<td class="' + (r.peerResidual > 0 ? "" : r.peerResidual < 0 ? "neg" : "") + '">' +
       (r.peerResidual === null ? "·" : fmtSigned(r.peerResidual, "x")) + "</td>" +
+      '<td class="dstream' + (r.flags && r.flags.downstream ? " on" : (r.bankShareOfHoldco !== null && r.bankShareOfHoldco < 1 ? " under" : "")) + '">' +
+      (r.bankShareOfHoldco === null ? "·" : fmtPct(r.bankShareOfHoldco, 0)) + "</td>" +
       '<td><span class="stamp ' + stamp.cls + '">' + stamp.txt + "</span></td>" +
       "</tr>";
     if (STATE.open[r.cert]) html += detailRow(r);
@@ -722,7 +733,7 @@ function boot() {
     loadEnforcement();
   }).catch(function () {
     document.getElementById("tbody").innerHTML =
-      '<tr><td colspan="11"><div class="emptystate">The tape did not load. Check the worker at /diag, then reload.</div></td></tr>';
+      '<tr><td colspan="12"><div class="emptystate">The tape did not load. Check the worker at /diag, then reload.</div></td></tr>';
   });
 
   fetchJson(API + "/pulse").then(function (p) {
