@@ -70,7 +70,13 @@ function pickFact(concept, unitKey, periodYmd) {
 /* Tag ladders: first tag that yields a usable fact wins. */
 const LADDERS = {
   equity:      { taxonomy: "us-gaap", unit: "USD", tags: ["StockholdersEquity"] },
-  preferred:   { taxonomy: "us-gaap", unit: "USD", tags: ["PreferredStockValue", "PreferredStockValueOutstanding"], optional: true },
+  preferred:   { taxonomy: "us-gaap", unit: "USD", tags: [
+                   "PreferredStockValue",
+                   "PreferredStockValueOutstanding",
+                   "PreferredStockIncludingAdditionalPaidInCapital",
+                   "PreferredStockLiquidationPreferenceValue"
+                 ], optional: true },
+  minority:    { taxonomy: "us-gaap", unit: "USD", tags: ["MinorityInterest"], optional: true },
   goodwill:    { taxonomy: "us-gaap", unit: "USD", tags: ["Goodwill"], optional: true },
   intangibles: { taxonomy: "us-gaap", unit: "USD", tags: ["IntangibleAssetsNetExcludingGoodwill", "FiniteLivedIntangibleAssetsNet"], optional: true },
   shares:      { taxonomy: "dei",     unit: "shares", tags: ["EntityCommonStockSharesOutstanding"], optional: true }
@@ -84,7 +90,11 @@ async function fieldFor(cik, field, periodYmd, tally) {
     await sleep(PACE_MS);
     if (!concept) continue;
     const fact = pickFact(concept, spec.unit, periodYmd);
-    if (fact) { tally[`${field}:${tag}`] = (tally[`${field}:${tag}`] || 0) + 1; return fact; }
+    if (fact) {
+      tally[`${field}:${tag}`] = (tally[`${field}:${tag}`] || 0) + 1;
+      fact.tag = tag;
+      return fact;
+    }
   }
   return null;
 }
@@ -117,11 +127,12 @@ async function main() {
       const pref = await fieldFor(cik, "preferred", period, tally);
       const gw = await fieldFor(cik, "goodwill", period, tally);
       const intang = await fieldFor(cik, "intangibles", period, tally);
+      const minority = await fieldFor(cik, "minority", period, tally);
       const shares = await fieldFor(cik, "shares", period, tally);
 
       /* XBRL dollars -> call report thousands */
       const K = (f) => (f ? Math.round(f.value / 1000) : 0);
-      const tceK = K(eq) - K(pref) - K(gw) - K(intang);
+      const tceK = K(eq) - K(pref) - K(minority) - K(gw) - K(intang);
       holdcos[b.ticker] = {
         cik,
         tceK,
@@ -129,19 +140,56 @@ async function main() {
         preferredK: K(pref),
         goodwillK: K(gw),
         intangiblesK: K(intang),
+        minorityK: K(minority),
+        preferredTag: pref ? pref.tag : null,
         shares: shares ? shares.value : null,
         factEnd: eq.end,
         form: eq.form,
         exactPeriod: eq.end === period
       };
       ok++;
-      console.log(`  ${b.ticker.padEnd(6)} TCE $${(tceK / 1e6).toFixed(1)}B (${eq.form} end ${eq.end}${eq.end === period ? "" : ", nearest"})`);
+      const B = (v) => (v / 1e6).toFixed(2);
+      console.log(
+        `  ${b.ticker.padEnd(6)} TCE $${B(tceK)}B  = eq ${B(K(eq))}` +
+        ` - pref ${B(K(pref))}${pref ? "" : "*"}` +
+        ` - nci ${B(K(minority))}` +
+        ` - gw ${B(K(gw))}${gw ? "" : "*"}` +
+        ` - intang ${B(K(intang))}${intang ? "" : "*"}` +
+        `  [${eq.form} ${eq.end}${eq.end === period ? "" : " NEAREST"}]`);
     } catch (e) {
       console.log(`  ${b.ticker}: ${e.message}`);
     }
   }
 
+  console.log("\n  (* means the tag was not found and zero was used)");
   console.log(`\nResolved ${ok}/${universe.length} holdcos (${noCik} no CIK, ${noEquity} no equity fact).`);
+
+  /* Cross-check against bank-level tangible book. A bank subsidiary carrying
+     MORE tangible equity than its consolidated parent is real and common
+     (double leverage: the holdco borrows and downstreams the proceeds), but
+     an extreme ratio can equally mean a component tag was missed on either
+     side. Print the tails so the difference is examined, not assumed. */
+  const ratios = [];
+  for (const b of universe) {
+    const h = holdcos[b.ticker];
+    if (!h || !h.tceK || b.tbv === null || b.tbv === undefined) continue;
+    ratios.push({ ticker: b.ticker, r: b.tbv / h.tceK, noPref: !h.preferredTag });
+  }
+  ratios.sort((a, b) => b.r - a.r);
+  const high = ratios.filter((x) => x.r > 1.10);
+  if (high.length) {
+    console.log(`\nBank book exceeds holdco tangible common by >10% at ${high.length} banks:`);
+    high.forEach((x) => console.log(
+      `  ${x.ticker.padEnd(6)} ${(x.r * 100).toFixed(0)}%` +
+      (x.noPref ? "   (no preferred tag found; TCE may be overstated)" : "   (double leverage or a bank-level goodwill gap)")));
+  }
+  const low = ratios.filter((x) => x.r < 0.70);
+  if (low.length) {
+    console.log(`\nBank book is under 70% of holdco tangible common at ${low.length} banks (large nonbank operations, or a lead-charter mismatch):`);
+    low.forEach((x) => console.log(`  ${x.ticker.padEnd(6)} ${(x.r * 100).toFixed(0)}%`));
+  }
+  const noPref = ratios.filter((x) => x.noPref).length;
+  if (noPref) console.log(`\n${noPref} banks resolved with no preferred tag. Genuine for banks with no preferred stock; overstates TCE for the rest.`);
   console.log("Tag usage (deploy verification):");
   for (const [k, n] of Object.entries(tally)) console.log(`  ${k.padEnd(46)} ${n}`);
 
