@@ -181,6 +181,33 @@ tbody tr.straddle:hover td{background:var(--oxblood-soft)}
 .badge.enf{background:var(--oxblood);color:var(--paper-2)}
 .badge.strad{background:var(--paper);border:1px solid var(--oxblood);color:var(--oxblood)}
 .badge.mc{background:var(--paper);border:1px solid var(--rule-strong);color:var(--ink-soft)}
+/* Formula tooltips. The trigger sits inside the sortable header, so it must
+   stop the click from reaching the sort handler. The panel is position:fixed
+   and appended at body level because the table wrapper scrolls and would
+   otherwise clip it. */
+button.ttip{
+  font-family:var(--mono);font-size:9.5px;line-height:1;
+  width:14px;height:14px;padding:0;margin-left:5px;vertical-align:1px;
+  border:1px solid var(--rule-strong);border-radius:50%;
+  background:var(--paper);color:var(--ink-soft);cursor:help;
+}
+button.ttip:hover,button.ttip[aria-expanded="true"]{
+  border-color:var(--copper);color:var(--copper);
+}
+.tip{
+  position:fixed;z-index:60;max-width:330px;
+  background:var(--paper-2);color:var(--ink);
+  border:1px solid var(--ink);border-radius:6px;
+  box-shadow:0 10px 26px -12px var(--shadow);
+  padding:11px 13px;font-family:var(--body);font-size:13px;line-height:1.5;
+  text-align:left;text-transform:none;letter-spacing:0;font-weight:400;
+}
+.tip b{font-family:var(--display);font-weight:600;font-size:14px;display:block;margin-bottom:4px}
+.tip code{
+  font-family:var(--mono);font-size:11.5px;background:var(--paper-3);
+  padding:1px 4px;border-radius:3px;display:inline-block;margin:2px 0;
+}
+.tip .src{display:block;margin-top:7px;font-size:11.5px;color:var(--ink-soft)}
 td.dstream{font-variant-numeric:tabular-nums}
 td.dstream.on{color:var(--copper);font-weight:700}
 td.dstream.under{color:var(--ink-soft)}
@@ -291,7 +318,7 @@ footer{border-top:1px solid var(--rule);margin-top:34px;padding-top:12px;font-fa
           <th data-key="depositPremium">Dep. premium <span class="arrow"></span></th>
           <th data-key="warrantedDelta">vs warranted <span class="arrow"></span></th>
           <th data-key="peerResidual">vs peers <span class="arrow"></span></th>
-          <th data-key="bankShareOfHoldco" title="Bank tangible equity as a share of consolidated tangible common. Above 100% the parent is funding the bank with preferred or holdco debt.">Downstream <span class="arrow"></span></th>
+          <th data-key="bankShareOfHoldco">Downstream <span class="arrow"></span></th>
           <th data-key="fresh">Data <span class="arrow"></span></th>
         </tr>
       </thead>
@@ -309,6 +336,8 @@ footer{border-top:1px solid var(--rule);margin-top:34px;padding-top:12px;font-fa
 
   <footer>Prices: prior close via market data API · Fundamentals: FFIEC CDR via the BankRegWire call report pipeline · Not investment advice</footer>
 </main>
+
+<div class="tip" id="tip" role="tooltip" hidden></div>
 
 <!-- Shared instrument chrome -->
 <script src="/brw-rail.js" defer></script>
@@ -696,6 +725,139 @@ function loadEnforcement() {
 }
 
 /* ====================================================================
+   SECTION 10b: FORMULA TOOLTIPS
+   Every column states its own arithmetic and its source. MDRM codes are
+   named so a reader can check any figure against the filed report rather
+   than take the tape's word for it.
+   ==================================================================== */
+var FORMULAS = {
+  name: {
+    t: "Bank",
+    b: "The lead insured depository, matched to the ticker through its FDIC certificate. The traded entity is the holding company; call report figures are bank level.",
+    s: "FDIC BankFind"
+  },
+  price: { t: "Price", b: "Prior close.", s: "Market data feed, refreshed weeknights after the close" },
+  changePct: { t: "Day", b: "Change against the prior close.", s: "Market data feed" },
+  marketCap: {
+    t: "Market capitalisation",
+    b: "Shares outstanding times price, for the holding company. This is the one figure on the row that covers the whole group rather than the bank.",
+    s: "Market data feed"
+  },
+  pTbv: {
+    t: "Price to tangible book",
+    b: "<code>market cap / tangible book</code><br>Tangible book is total equity less goodwill and other intangibles.",
+    s: "Call report Schedule RC: 3210 equity, 3163 goodwill, 0426 other intangibles"
+  },
+  pAdjTbv: {
+    t: "Rate-adjusted price to tangible book",
+    b: "<code>market cap / (tangible book - HTM unrealised loss)</code><br>The held-to-maturity portfolio is carried at amortised cost, so its mark never reaches equity. This puts it back, pre-tax.",
+    s: "Call report Schedule RC-B: 1754 amortised cost, 1771 fair value"
+  },
+  gap: {
+    t: "Book gap",
+    b: "Stated multiple (copper) and rate-adjusted multiple (oxblood) on a shared axis, with tangible book as the vertical hairline. A bar turns oxblood where the adjustment carries a bank across book.",
+    s: "Derived from the two multiples"
+  },
+  depositPremium: {
+    t: "Deposit premium",
+    b: "<code>(market cap - tangible book) / core deposits</code><br>What the market pays for the franchise above its tangible net worth, per dollar of core deposits. This is how acquirers price a deal. Core deposits are total deposits less time deposits over $250,000 and brokered deposits.",
+    s: "Schedule RC-E: 2200 and RCFN2200 total, J474 time over $250k, 2365 brokered"
+  },
+  warrantedDelta: {
+    t: "Actual less warranted multiple",
+    b: "<code>warranted = (ROTE - g) / (COE - g)</code><br>The residual income multiple a bank's returns can justify. Negative means the market pays less than the returns warrant. Return on tangible equity is trailing twelve months over average tangible book; the cost of equity and growth assumptions are stated above the table and are exactly that, assumptions.",
+    s: "Schedule RI 4340 net income, on the tangible book above"
+  },
+  peerResidual: {
+    t: "Actual less peer-fitted multiple",
+    b: "Each load fits the universe's multiples on return on tangible equity, uninsured deposit share, and the log of assets, then reports what is left over. It answers whether a bank is cheap or rich given its own risk profile, not against the field. Needs 25 banks with complete data or it stays blank.",
+    s: "Cross-sectional least squares, refit on every load"
+  },
+  bankShareOfHoldco: {
+    t: "Downstream ratio",
+    b: "<code>bank tangible equity / consolidated tangible common</code><br>Above 100% the subsidiary carries more tangible equity than the whole group's common, which is only possible where the parent funded it with something other than common equity: preferred, or holding company debt. That is double leverage. Below 100% the group holds tangible common outside the lead charter.",
+    s: "10-Q or 10-K XBRL: equity less preferred, noncontrolling interests, goodwill and intangibles"
+  },
+  fresh: {
+    t: "Data age",
+    b: "The reporting period behind every book figure on the row, and how long ago it closed. Prices move daily; the balance sheet is quarterly and arrives on a lag.",
+    s: "FFIEC Call Report"
+  }
+};
+
+var TIP = { el: null, open: null };
+
+function hideTip() {
+  if (!TIP.el) return;
+  TIP.el.hidden = true;
+  if (TIP.open) { TIP.open.setAttribute("aria-expanded", "false"); TIP.open = null; }
+}
+
+function showTip(btn) {
+  var key = btn.getAttribute("data-tip");
+  var f = FORMULAS[key];
+  if (!f || !TIP.el) return;
+  TIP.el.innerHTML = "<b>" + f.t + "</b>" + f.b + '<span class="src">Source: ' + f.s + "</span>";
+  TIP.el.hidden = false;
+  var r = btn.getBoundingClientRect();
+  var w = TIP.el.offsetWidth, h = TIP.el.offsetHeight;
+  var left = Math.min(Math.max(8, r.left - 10), window.innerWidth - w - 8);
+  var top = r.bottom + 8;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 8);
+  TIP.el.style.left = left + "px";
+  TIP.el.style.top = top + "px";
+  if (TIP.open && TIP.open !== btn) TIP.open.setAttribute("aria-expanded", "false");
+  btn.setAttribute("aria-expanded", "true");
+  TIP.open = btn;
+}
+
+function wireTips() {
+  TIP.el = document.getElementById("tip");
+  var ths = document.querySelectorAll("thead th[data-key]");
+  for (var i = 0; i < ths.length; i++) {
+    var key = ths[i].getAttribute("data-key");
+    if (!FORMULAS[key]) continue;
+    var btn = document.createElement("button");
+    btn.className = "ttip";
+    btn.type = "button";
+    btn.setAttribute("data-tip", key);
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-label", "How " + FORMULAS[key].t + " is calculated");
+    btn.textContent = "?";
+    ths[i].appendChild(btn);
+  }
+
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest ? e.target.closest("button.ttip") : null;
+    if (btn) {
+      e.stopPropagation();            /* the header is also the sort control */
+      e.preventDefault();
+      if (TIP.open === btn) hideTip(); else showTip(btn);
+      return;
+    }
+    if (TIP.el && !TIP.el.hidden && !(e.target.closest && e.target.closest("#tip"))) hideTip();
+  }, true);
+
+  document.addEventListener("mouseover", function (e) {
+    var btn = e.target.closest ? e.target.closest("button.ttip") : null;
+    if (btn) showTip(btn);
+  });
+  document.addEventListener("mouseout", function (e) {
+    var btn = e.target.closest ? e.target.closest("button.ttip") : null;
+    if (btn && TIP.open === btn && document.activeElement !== btn) hideTip();
+  });
+  document.addEventListener("focusin", function (e) {
+    var btn = e.target.closest ? e.target.closest("button.ttip") : null;
+    if (btn) showTip(btn);
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") hideTip();
+  });
+  window.addEventListener("scroll", hideTip, true);
+  window.addEventListener("resize", hideTip);
+}
+
+/* ====================================================================
    SECTION 11: WIRING
    ==================================================================== */
 function setSort(key) {
@@ -716,6 +878,7 @@ function setSort(key) {
 }
 
 function boot() {
+  wireTips();
   fetchJson(API + "/api/tape").then(function (body) {
     STATE.rows = body.banks || [];
     STATE.period = body.period;
