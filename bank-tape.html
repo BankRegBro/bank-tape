@@ -212,6 +212,12 @@ tr.detail td{
 .dcell span{font-size:12px;color:var(--ink-soft)}
 .dlinks{margin-top:12px;font-size:13px}
 .dlinks a{margin-right:16px}
+.spark{margin-top:12px}
+.spark .lbl{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-bottom:2px;display:block}
+.spark svg{display:block}
+.spark .sp-stated{fill:none;stroke:var(--copper);stroke-width:1.5}
+.spark .sp-adjusted{fill:none;stroke:var(--oxblood);stroke-width:1.5}
+.spark .sp-book{stroke:var(--ink-soft);stroke-width:1;stroke-dasharray:2 2}
 
 .emptystate{padding:44px 22px;text-align:center;color:var(--ink-soft);font-size:15px}
 
@@ -294,7 +300,7 @@ footer{border-top:1px solid var(--rule);margin-top:34px;padding-top:12px;font-fa
   <section class="method">
     <h2>How these numbers are made</h2>
     <p>Figures are bank-level from the FFIEC call report of the stated period; the traded entity is the holding company, so for institutions with large nonbank operations the ratios run rich. Tangible book is total equity less goodwill and other intangibles. Adjusted tangible book further deducts the pre-tax unrealized loss on held-to-maturity securities (amortized cost less fair value, Schedule RC-B), the mark the balance sheet is allowed to omit.</p>
-    <p>Deposit premium is <code>(market cap − TBV) / core deposits</code>, the classic acquirer's yardstick. The warranted multiple is <code>(ROTE − g) / (COE − g)</code> with the assumptions shown above the table; "vs warranted" is the actual multiple minus that figure, the market's verdict in one number. "Vs peers" is the residual from a cross-sectional fit of the multiple on ROTE, uninsured deposit share, and size across this universe: cheap or rich given the profile, refit on every load. The detail rows carry a modeled between-quarters book value built from the earnings run-rate net of dividends only; it is labeled as a model and excludes rate drift. Banks marked multi-charter belong to a holding company that runs several bank charters; their book-value columns are withheld rather than estimated, since one charter's call report cannot be compared to the whole company's market value. Prices are prior-close; call report data ages between quarters and each row says exactly how much.</p>
+    <p>Deposit premium is <code>(market cap − TBV) / core deposits</code>, the classic acquirer's yardstick. The warranted multiple is <code>(ROTE − g) / (COE − g)</code> with the assumptions shown above the table; "vs warranted" is the actual multiple minus that figure, the market's verdict in one number. "Vs peers" is the residual from a cross-sectional fit of the multiple on ROTE, uninsured deposit share, and size across this universe: cheap or rich given the profile, refit on every load. The detail rows carry a modeled between-quarters book value built from the earnings run-rate net of dividends only; it is labeled as a model and excludes rate drift. Where SEC filings supply it, the detail rows carry a holdco check: tangible common equity from the 10-Q or 10-K, the multiple on that consolidated book, and how much of it the lead bank's call report actually covers. Multiples marked "h" are priced on the holdco book. The book-gap axis is scaled to the multiples actually present in the universe, so a bank carrying a large held-to-maturity mark is never clipped at the frame. Banks marked multi-charter belong to a holding company that runs several bank charters; their book-value columns are withheld rather than estimated, since one charter's call report cannot be compared to the whole company's market value. Prices are prior-close; call report data ages between quarters and each row says exactly how much.</p>
   </section>
 
   <footer>Prices: prior close via market data API · Fundamentals: FFIEC CDR via the BankRegWire call report pipeline · Not investment advice</footer>
@@ -310,13 +316,33 @@ footer{border-top:1px solid var(--rule);margin-top:34px;padding-top:12px;font-fa
    ==================================================================== */
 var API = "https://brw-bank-tape.joeysamowitz.workers.dev";
 var ENF = "https://brw-enforcement-wire.joeysamowitz.workers.dev/";
-var DB_MIN = 0.25, DB_MAX = 2.50, DB_W = 150, DB_H = 22;
+var DB_W = 150, DB_H = 22;
+/* Domain is computed from the loaded universe rather than fixed: real
+   adjusted multiples run past 4x when a bank carries a large HTM mark, and a
+   hard ceiling clipped exactly the banks the tool exists to expose. Book
+   (1.0x) is always inside the domain so the hairline never leaves the frame. */
+var DB_MIN = 0.75, DB_MAX = 2.50;
+
+function computeDomain(rows) {
+  var lo = 1, hi = 1;
+  rows.forEach(function (r) {
+    [r.pTbv, r.pAdjTbv].forEach(function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    });
+  });
+  var pad = Math.max(0.1, (hi - lo) * 0.08);
+  DB_MIN = Math.max(0, lo - pad);
+  DB_MAX = hi + pad;
+  if (DB_MAX - DB_MIN < 0.5) { DB_MIN = Math.max(0, DB_MIN - 0.25); DB_MAX = DB_MIN + 0.5; }
+}
 
 var STATE = {
   rows: [], period: null, periodDays: null, model: null,
   sortKey: "marketCap", sortDir: -1,
   q: "", below: false, strad: false, size: null,
-  open: {}, enf: null
+  open: {}, enf: null, history: {}
 };
 
 function fetchJson(url) {
@@ -418,11 +444,18 @@ function visibleRows() {
 
 function detailRow(r) {
   if (r.flags && r.flags.multiCharter) {
+    var mcExplain = r.basis === "holdco"
+      ? 'This holding company operates several separately chartered banks, so bank-level call report ' +
+        'figures cannot be compared to the whole company. The stated multiple shown is priced on ' +
+        'consolidated tangible common equity from the 10-Q/10-K (' + fmtMoneyK(r.holdcoTce) + '), the SEC ' +
+        'filing that sees every charter. The rate-adjusted multiple stays withheld: the HTM mark is a ' +
+        'call report figure and does not consolidate here.'
+      : 'This holding company operates several separately chartered banks. ' +
+        'Market capitalization covers all of them while a call report covers one, so book-value multiples ' +
+        'would overstate the bank by a wide margin. Price and market capitalization are shown; every ' +
+        'book-derived figure is withheld until the charters are consolidated.';
     return '<tr class="detail"><td colspan="11">' +
-      '<p style="margin:0 0 8px;max-width:70ch">This holding company operates several separately chartered banks. ' +
-      'Market capitalization covers all of them while a call report covers one, so book-value multiples ' +
-      'would overstate the bank by a wide margin. Price and market capitalization are shown; every ' +
-      'book-derived figure is withheld until the charters are consolidated.</p>' +
+      '<p style="margin:0 0 8px;max-width:70ch">' + mcExplain + '</p>' +
       '<div class="dlinks"><a href="/callreport/literal-form.html#cert=' + r.cert + '">Literal Form (lead charter)</a>' +
       '<a href="https://banks.data.fdic.gov/bankfind-suite/bankfind?cert=' + r.cert + '" target="_blank" rel="noopener">FDIC BankFind</a></div>' +
       '</td></tr>';
@@ -431,6 +464,9 @@ function detailRow(r) {
   var warrantedLine = r.warranted === null ? "·" :
     "ROTE " + fmtPct(r.rote) + " · COE " + fmtPct(m.coe) + " · g " + fmtPct(m.g, 0) +
     " → warranted " + fmtX(r.warranted) + " vs actual " + fmtX(r.pTbv);
+  var holdcoLine = r.holdcoTce === null ? "·" :
+    fmtX(r.pHoldcoTce) + " on holdco tangible common" +
+    (r.bankShareOfHoldco !== null ? " · bank book is " + fmtPct(r.bankShareOfHoldco, 0) + " of it" : "");
   var peerLine = r.peerFitted === null ? "·" :
     "peers with this profile price at " + fmtX(r.peerFitted) + " · actual " + fmtX(r.pTbv);
   var nowcastLine = r.pNowcastTbv === null ? "·" :
@@ -448,8 +484,10 @@ function detailRow(r) {
     '<div class="dcell"><b>' + fmtX(r.pCreditTbv) + '</b><span>P/TBV on credit-adjusted book (nonaccrual + 90d past due + OREO, net of ACL)</span></div>' +
     '<div class="dcell"><b style="color:var(--ink-soft)">' + nowcastLine + '</b><span>nowcast, earnings accretion only, rate drift excluded</span></div>' +
     '<div class="dcell"><b style="font-size:12.5px;font-weight:500">' + peerLine + '</b><span>cross-sectional model: ROTE, uninsured share, size</span></div>' +
+    '<div class="dcell"><b style="font-size:12.5px;font-weight:500">' + holdcoLine + '</b><span>holdco check, tangible common equity from the 10-Q/10-K (SEC XBRL)</span></div>' +
     '<div class="dcell"><b style="font-size:12.5px;font-weight:500">' + warrantedLine + '</b><span>warranted multiple math</span></div>' +
     '</div>' +
+    '<div class="spark" id="spark-' + r.cert + '"></div>' +
     '<div class="dlinks">' +
     '<a href="/callreport/literal-form.html#cert=' + r.cert + '">Literal Form</a>' +
     '<a href="/callreport/health-scanner.html#cert=' + r.cert + '">Health Scanner</a>' +
@@ -484,7 +522,7 @@ function render() {
       '<td class="' + (r.changePct > 0 ? "pos" : r.changePct < 0 ? "neg" : "") + '">' +
       (r.changePct === null ? "·" : fmtSigned(r.changePct, "%")) + "</td>" +
       "<td>" + fmtMoneyK(r.marketCap) + "</td>" +
-      "<td>" + fmtX(r.pTbv) + "</td>" +
+      "<td>" + fmtX(r.pTbv) + (r.basis === "holdco" ? '<span class="bankmeta" title="Priced on consolidated holdco tangible common equity from SEC filings"> h</span>' : "") + "</td>" +
       "<td>" + fmtX(r.pAdjTbv) + "</td>" +
       '<td class="l dumbbell">' + dumbbell(r.pTbv, r.pAdjTbv) + "</td>" +
       "<td>" + fmtPct(r.depositPremium) + "</td>" +
@@ -497,6 +535,9 @@ function render() {
     if (STATE.open[r.cert]) html += detailRow(r);
   });
   tb.innerHTML = html;
+  rows.forEach(function (r) {
+    if (STATE.open[r.cert] && !(r.flags && r.flags.multiCharter)) loadSpark(r.ticker, r.cert);
+  });
 }
 
 /* Hero: the whole universe compressed onto the multiple axis. Same fixed
@@ -514,10 +555,14 @@ function renderHero() {
   priced.sort(function (a, b) { return a.pTbv - b.pTbv; });
   var xb = hx(1);
   var svg = "";
-  /* axis ticks */
-  [0.5, 1.5, 2].forEach(function (t) {
-    svg += '<text x="' + hx(t) + '" y="' + (H - 4) + '" text-anchor="middle">' + t.toFixed(1) + "x</text>";
-  });
+  /* axis ticks at readable intervals across whatever domain the data set */
+  var span = DB_MAX - DB_MIN;
+  var step = span > 3 ? 1 : span > 1.5 ? 0.5 : 0.25;
+  for (var t = Math.ceil(DB_MIN / step) * step; t <= DB_MAX + 1e-9; t += step) {
+    if (Math.abs(t - 1) < step / 4) continue;   /* 1.0x has its own label */
+    svg += '<text x="' + hx(t) + '" y="' + (H - 4) + '" text-anchor="middle">' +
+      (step < 1 ? t.toFixed(2).replace(/0$/, "") : t.toFixed(1)) + "x</text>";
+  }
   svg += '<line class="bookline" x1="' + xb + '" y1="' + (TOP - 10) + '" x2="' + xb + '" y2="' + (H - 16) + '"/>';
   svg += '<text class="booklabel" x="' + (xb + 5) + '" y="' + (TOP - 12) + '">1.0x tangible book</text>';
   /* median stated marker */
@@ -546,6 +591,46 @@ function renderHero() {
     render();
     document.getElementById("tape").scrollIntoView({ behavior: "smooth", block: "start" });
   };
+}
+
+/* Sparkline: stated (copper) and adjusted (oxblood) multiples over the
+   recorded history, book hairline when 1.0x is inside the range. Fetched
+   lazily on first expand and cached for the session; one flat line is not
+   worth drawing, so under 3 points it explains itself instead. */
+function sparkSvg(points) {
+  var W = 240, H = 44, PAD = 3;
+  var vals = [];
+  points.forEach(function (pt) { vals.push(pt.p, pt.a); });
+  var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  if (hi - lo < 0.02) { lo -= 0.05; hi += 0.05; }
+  var x = function (i) { return PAD + i / (points.length - 1) * (W - 2 * PAD); };
+  var y = function (v) { return H - PAD - (v - lo) / (hi - lo) * (H - 2 * PAD); };
+  var line = function (key, cls) {
+    var d = points.map(function (pt, i) { return (i ? "L" : "M") + x(i).toFixed(1) + " " + y(pt[key]).toFixed(1); }).join(" ");
+    return '<path class="' + cls + '" d="' + d + '"/>';
+  };
+  var book = (lo < 1 && hi > 1)
+    ? '<line class="sp-book" x1="' + PAD + '" y1="' + y(1) + '" x2="' + (W - PAD) + '" y2="' + y(1) + '"/>' : "";
+  return '<svg width="' + W + '" height="' + H + '" role="img" aria-label="Multiple history">' +
+    book + line("p", "sp-stated") + line("a", "sp-adjusted") + "</svg>";
+}
+
+function loadSpark(ticker, cert) {
+  var box = document.getElementById("spark-" + cert);
+  if (!box) return;
+  function draw(points) {
+    if (!points || points.length < 3) {
+      box.innerHTML = '<span class="lbl">Multiple history builds from tonight; check back in a few days.</span>';
+      return;
+    }
+    var span = points.length;
+    box.innerHTML = '<span class="lbl">' + span + '-day multiple history: stated (copper), adjusted (oxblood)</span>' +
+      sparkSvg(points);
+  }
+  if (STATE.history[ticker]) { draw(STATE.history[ticker]); return; }
+  fetchJson(API + "/api/history?ticker=" + encodeURIComponent(ticker) + "&days=180")
+    .then(function (h) { STATE.history[ticker] = h.points || []; draw(STATE.history[ticker]); })
+    .catch(function () { box.innerHTML = ""; });
 }
 
 function renderProxies(proxies) {
@@ -630,6 +715,7 @@ function boot() {
         "Warranted model: COE " + (body.model.coe * 100).toFixed(1) + "% · g " +
         (body.model.g * 100).toFixed(0) + "%";
     }
+    computeDomain(STATE.rows);
     renderProxies(body.proxies || {});
     render();
     renderHero();
