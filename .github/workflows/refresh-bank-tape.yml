@@ -26,7 +26,7 @@ on:
       job:
         description: "Which job to run"
         type: choice
-        options: [quotes, fundamentals, both, universe, diag]
+        options: [quotes, fundamentals, both, universe, diag, sec]
         default: quotes
       period:
         description: "Fundamentals period (YYYY-MM-DD or latest)"
@@ -93,3 +93,20 @@ jobs:
           TAPE_PERIOD: ${{ inputs.period || 'latest' }}
           CALLREPORT_BASE: ${{ inputs.callreport_base }}
         run: node scripts/tape-fundamentals.mjs
+      - name: Holdco reconciliation from SEC EDGAR
+        env:
+          TAPE_SYNC_SECRET: ${{ secrets.TAPE_SYNC_SECRET }}
+        run: node scripts/tape-sec.mjs
+
+  sec:
+    if: inputs.job == 'sec'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Holdco reconciliation from SEC EDGAR
+        env:
+          TAPE_SYNC_SECRET: ${{ secrets.TAPE_SYNC_SECRET }}
+        run: node scripts/tape-sec.mjs
