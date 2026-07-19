@@ -35,7 +35,30 @@
 const WORKER = process.env.TAPE_WORKER_URL || "https://brw-bank-tape.joeysamowitz.workers.dev";
 const CR_BASE = (process.env.CALLREPORT_BASE || "").trim() || "https://fdic-bankregwire.joeysamowitz.workers.dev";
 const SECRET = process.env.TAPE_SYNC_SECRET;
-const PERIOD = process.env.TAPE_PERIOD || "latest";
+const PERIOD = (process.env.TAPE_PERIOD || "latest").trim();
+
+/* The worker validates period as YYYYMMDD ("period must be YYYYMMDD, e.g.
+   20251231"). Accept either form from the workflow input, and treat "latest"
+   as "send no period at all" since the worker picks the newest itself. */
+function periodParam() {
+  if (!PERIOD || PERIOD.toLowerCase() === "latest") return null;
+  const digits = PERIOD.replace(/-/g, "");
+  if (!/^\d{8}$/.test(digits)) {
+    console.error(`TAPE_PERIOD must be YYYY-MM-DD or YYYYMMDD, got "${PERIOD}"`);
+    process.exit(1);
+  }
+  return digits;
+}
+
+/* Responses carry the reporting date at meta.repdte as YYYYMMDD. Normalize to
+   YYYY-MM-DD, which is what the tape worker stores and ages against. */
+function readPeriod(body) {
+  const raw = (body && body.meta && (body.meta.repdte || body.meta.period)) ||
+              (body && (body.repdte || body.period || body.reportPeriod)) || null;
+  if (!raw) return null;
+  const d = String(raw).replace(/-/g, "");
+  return /^\d{8}$/.test(d) ? `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}` : String(raw);
+}
 const ORIGIN = "https://bankregwire.com";
 
 if (!SECRET) { console.error("TAPE_SYNC_SECRET missing"); process.exit(1); }
@@ -92,14 +115,53 @@ async function preflight() {
 
 function toNum(v) {
   if (v === null || v === undefined) return null;
-  const n = Number(String(v).replace(/[,$\s]/g, ""));
-  return isFinite(n) ? n : null;
+  let t = String(v).replace(/[,$\s]/g, "");
+  let neg = false;
+  const paren = t.match(/^\((.*)\)$/);      /* accounting negative: (1,234) */
+  if (paren) { neg = true; t = paren[1]; }
+  if (t === "") return null;
+  const n = Number(t);
+  if (!isFinite(n)) return null;
+  return neg ? -n : n;
+}
+
+/* The worker's own note: .values is a generic two-column SDF parse and "the
+   fallback, not the authority", with the full facsimile under .raw. If a line
+   carries more than two columns, a needed code can be missing from .values
+   while sitting in plain sight in .raw. Parse raw tolerantly and use it only
+   to fill gaps, never to override what the worker already parsed. */
+const MDRM_RE = /^[A-Z]{4}[A-Z0-9]{4}$/;
+const RAW_FILLS = [];
+
+function parseRawSdf(raw) {
+  const out = {};
+  if (typeof raw !== "string" || !raw) return out;
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line) continue;
+    const cols = line.split(/\t/);
+    for (let i = 0; i < cols.length; i++) {
+      const code = cols[i].trim().toUpperCase();
+      if (!MDRM_RE.test(code)) continue;
+      /* take the first parseable number to the right of the code */
+      for (let j = i + 1; j < cols.length; j++) {
+        const v = toNum(cols[j]);
+        if (v !== null) { if (!(code in out)) out[code] = v; break; }
+      }
+      break;
+    }
+  }
+  return out;
 }
 
 function codeMap(body) {
   // The callreport contract carries a code->value object; read defensively.
   const cand = body.values || body.codes || body.items || body.data || body;
-  if (cand && typeof cand === "object" && !Array.isArray(cand)) return cand;
+  if (cand && typeof cand === "object" && !Array.isArray(cand)) {
+    const fromRaw = parseRawSdf(body.raw);
+    const filled = Object.keys(fromRaw).filter((k) => !(k in cand)).length;
+    if (filled) RAW_FILLS.push(filled);
+    return { ...fromRaw, ...cand };   /* worker's parse wins on conflict */
+  }
   if (Array.isArray(cand)) {
     const m = {};
     for (const row of cand) {
@@ -196,29 +258,58 @@ function compute(m, period) {
  * ----------------------------------------------------------------------- */
 
 const SHAPES = [
-  { label: "cert + source=ffiec + period", build: (c) => `cert=${c}&source=ffiec&period=${encodeURIComponent(PERIOD)}` },
-  { label: "cert + source=ffiec",          build: (c) => `cert=${c}&source=ffiec` },
-  { label: "cert only",                    build: (c) => `cert=${c}` },
-  { label: "cert + source=fdic",           build: (c) => `cert=${c}&source=fdic` }
+  {
+    label: "cert + source=ffiec + period",
+    usable: true,
+    build: (c) => `cert=${c}&source=ffiec&period=${periodParam()}`,
+    skip: () => periodParam() === null
+  },
+  { label: "cert + source=ffiec", usable: true, build: (c) => `cert=${c}&source=ffiec` },
+  /* Diagnostic only. The FDIC crosswalk carries derived vitals (equity, assets,
+     deposits, net income, ACL) but NOT goodwill, intangibles, HTM amortized cost
+     or fair value, uninsured or brokered deposits, dividends, or nonaccruals.
+     Without those, "tangible book" is not tangible and the rate adjustment that
+     justifies this instrument cannot be computed. Probed so its success proves
+     the worker is healthy and the FFIEC credentials are the missing piece;
+     never adopted, so a degraded run can never silently publish. */
+  { label: "cert only (FDIC crosswalk)", usable: false, build: (c) => `cert=${c}` }
 ];
 
 async function discoverShape(cert) {
   console.log(`\nProbing /callreport request shapes with cert ${cert}:`);
+  let crosswalkWorks = false;
   for (const shape of SHAPES) {
+    if (shape.skip && shape.skip()) { console.log(`  [skip] ${shape.label} (no period requested)`); continue; }
     const url = `${CR_BASE}/callreport?${shape.build(cert)}`;
     try {
       const res = await fetch(url, { headers: { Origin: ORIGIN, Referer: ORIGIN + "/" } });
       const body = await res.text().catch(() => "");
       console.log(`  [${res.status}] ${shape.label}`);
       if (body) console.log(`        ${body.slice(0, 300).replace(/\s+/g, " ")}`);
-      if (res.ok) {
+      if (res.ok && shape.usable) {
         console.log(`\nUsing shape: ${shape.label}`);
         return shape;
+      }
+      if (res.ok && !shape.usable) {
+        crosswalkWorks = true;
+        console.log("        (usable for vitals only, not adopted)");
       }
     } catch (e) {
       console.log(`  [---] ${shape.label}: ${why(e)}`);
     }
     await sleep(300);
+  }
+  if (crosswalkWorks) {
+    console.error("\nThe call report worker is healthy, but only the FDIC crosswalk path");
+    console.error("answers. That path carries derived vitals and cannot supply goodwill,");
+    console.error("intangibles, HTM amortized cost or fair value, uninsured or brokered");
+    console.error("deposits, dividends, or nonaccruals. Tangible book and the rate");
+    console.error("adjustment are not computable from it, so this job will not publish.");
+    console.error("\nFix: bind FFIEC_USERID and FFIEC_TOKEN as Secrets on the call report");
+    console.error("worker (CDR PWS account), then re-run. Bind its KV namespace too if");
+    console.error("/diag still reports kv_bound false, or 37 uncached calls will spend");
+    console.error("FFIEC quota on every pass.");
+    process.exit(1);
   }
   console.error("\nNo request shape was accepted. The bodies above are the worker's own");
   console.error("explanation; the parameter names or period format need to match them.");
@@ -238,6 +329,7 @@ async function main() {
   const shape = await discoverShape(universe[0].cert);
 
   const banks = {};
+  const periodCounts = new Map();
   let period = null;
   let ok = 0, fail = 0;
 
@@ -250,8 +342,9 @@ async function main() {
         throw new Error(`HTTP ${res.status}${errText ? " " + errText.slice(0, 200).replace(/\s+/g, " ") : ""}`);
       }
       const body = await res.json();
-      const p = body.period || body.repdte || body.reportPeriod || PERIOD;
-      if (!period && p !== "latest") period = p;
+      const p = readPeriod(body);
+      if (p) periodCounts.set(p, (periodCounts.get(p) || 0) + 1);
+      if (!period && p) period = p;
 
       // Re-run guard, checked once we know the live period
       if (ok === 0 && period && tape.period === period) {
@@ -259,7 +352,7 @@ async function main() {
         return;
       }
 
-      const row = compute(codeMap(body), period || p);
+      const row = compute(codeMap(body), period || p || "");
       if (!row) throw new Error("no equity value in response");
       banks[String(b.cert)] = row;
       ok++;
@@ -277,6 +370,27 @@ async function main() {
     }
   }
 
+  /* Report the period distribution before anything else. A split means the
+     filing season is open and the tape would carry a single date that is wrong
+     for part of the universe. */
+  if (periodCounts.size > 1) {
+    const sorted = [...periodCounts.entries()].sort((a, b) => b[1] - a[1]);
+    console.log("\nPERIOD SPLIT: banks came back on more than one quarter.");
+    sorted.forEach(([p, n]) => console.log(`  ${p}: ${n} banks`));
+    period = sorted[0][0];
+    console.log(`\nLabelling the payload ${period} (most common), but ${ok - sorted[0][1]} banks`);
+    console.log("carry a different quarter and their multiples will be mismatched against price.");
+    console.log("For a clean pass, re-run with the period input pinned, e.g. 2026-03-31,");
+    console.log("and switch to latest once the whole universe has filed the newer quarter.");
+  } else if (periodCounts.size === 1) {
+    console.log(`\nAll ${ok} banks on ${period}. Clean pass.`);
+  }
+
+  if (RAW_FILLS.length) {
+    const total = RAW_FILLS.reduce((a, b) => a + b, 0);
+    console.log(`\nRaw SDF backfill: ${total} codes across ${RAW_FILLS.length} banks were absent`);
+    console.log("from the worker's .values parse and recovered from .raw.");
+  }
   console.log("\nMDRM hit rates (deploy verification, expect near-universe counts):");
   for (const [label, n] of Object.entries(HITS)) {
     console.log(`  ${label.padEnd(18)} ${n}/${ok}`);
