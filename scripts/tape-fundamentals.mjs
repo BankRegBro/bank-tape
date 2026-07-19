@@ -71,6 +71,8 @@ async function preflight() {
     process.exit(1);
   }
   console.log(`  responded HTTP ${res.status}`);
+  const diagBody = await res.text().catch(() => "");
+  if (diagBody) console.log(`  /diag says: ${diagBody.slice(0, 600)}`);
   if (res.status === 401 || res.status === 403) {
     console.error(`\nReached the worker but it refused the request (HTTP ${res.status}).`);
     console.error("That is the origin/referer gate or Zero Trust Access. The script already");
@@ -186,6 +188,43 @@ function compute(m, period) {
   };
 }
 
+/* ---- request-shape discovery -------------------------------------------
+ * The /callreport contract is not documented here, so rather than guess at
+ * parameters we ask the worker directly with one cert and keep the first
+ * shape that answers 200. Every rejection prints its body, which is where
+ * the worker explains what it wanted.
+ * ----------------------------------------------------------------------- */
+
+const SHAPES = [
+  { label: "cert + source=ffiec + period", build: (c) => `cert=${c}&source=ffiec&period=${encodeURIComponent(PERIOD)}` },
+  { label: "cert + source=ffiec",          build: (c) => `cert=${c}&source=ffiec` },
+  { label: "cert only",                    build: (c) => `cert=${c}` },
+  { label: "cert + source=fdic",           build: (c) => `cert=${c}&source=fdic` }
+];
+
+async function discoverShape(cert) {
+  console.log(`\nProbing /callreport request shapes with cert ${cert}:`);
+  for (const shape of SHAPES) {
+    const url = `${CR_BASE}/callreport?${shape.build(cert)}`;
+    try {
+      const res = await fetch(url, { headers: { Origin: ORIGIN, Referer: ORIGIN + "/" } });
+      const body = await res.text().catch(() => "");
+      console.log(`  [${res.status}] ${shape.label}`);
+      if (body) console.log(`        ${body.slice(0, 300).replace(/\s+/g, " ")}`);
+      if (res.ok) {
+        console.log(`\nUsing shape: ${shape.label}`);
+        return shape;
+      }
+    } catch (e) {
+      console.log(`  [---] ${shape.label}: ${why(e)}`);
+    }
+    await sleep(300);
+  }
+  console.error("\nNo request shape was accepted. The bodies above are the worker's own");
+  console.error("explanation; the parameter names or period format need to match them.");
+  process.exit(1);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 async function main() {
@@ -196,15 +235,20 @@ async function main() {
   const universe = (tape.banks || []).filter((b) => b.cert);
   if (!universe.length) throw new Error("universe empty or certs unresolved: seed config:universe first");
 
+  const shape = await discoverShape(universe[0].cert);
+
   const banks = {};
   let period = null;
   let ok = 0, fail = 0;
 
   for (const b of universe) {
     try {
-      const url = `${CR_BASE}/callreport?cert=${b.cert}&source=ffiec&period=${encodeURIComponent(PERIOD)}`;
+      const url = `${CR_BASE}/callreport?${shape.build(b.cert)}`;
       const res = await fetch(url, { headers: { Origin: ORIGIN, Referer: ORIGIN + "/" } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}${errText ? " " + errText.slice(0, 200).replace(/\s+/g, " ") : ""}`);
+      }
       const body = await res.json();
       const p = body.period || body.repdte || body.reportPeriod || PERIOD;
       if (!period && p !== "latest") period = p;
@@ -225,8 +269,9 @@ async function main() {
       fail++;
       /* A transport failure is a host problem, not a per-bank problem. Do not
          grind through the rest of the universe proving the same point. */
-      if (e && e.cause && fail >= 3 && ok === 0) {
-        console.error(`\nThree transport failures with zero successes against ${CR_BASE}. Stopping.`);
+      if (fail >= 3 && ok === 0) {
+        console.error(`\nThree failures with zero successes against ${CR_BASE}. Stopping rather`);
+        console.error("than repeating the same error 37 times. The message above is the worker's.");
         process.exit(1);
       }
     }
